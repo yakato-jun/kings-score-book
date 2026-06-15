@@ -3,11 +3,11 @@ import { loadPlayers } from "@/lib/db/players";
 import { aggregateSeason } from "@/lib/agg";
 import { avg, obp, slg, ops, era, fpct } from "@/lib/agg/types";
 import { SortableTable, type Column } from "@/components/SortableTable";
+import { listSeasons, resolveSeason, seasonOf } from "@/lib/season";
+import { SeasonNav } from "@/components/SeasonNav";
 
 // Atlas を実行時に読むため動的レンダリング（ビルド時にDB接続しない）
 export const dynamic = "force-dynamic";
-
-const SEASON = "2026";
 
 const BAT_COLS: Column[] = [
   { key: "name", label: "選手", left: true },
@@ -31,8 +31,16 @@ const FLD_COLS: Column[] = [
   { key: "e", label: "失策" }, { key: "tc", label: "守備機会" }, { key: "fpct", label: "守備率", format: "rate3" },
 ];
 
-export default async function SeasonPage() {
-  const games = (await loadGames()).filter((g) => g.game.date.startsWith(SEASON));
+export default async function SeasonPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ season?: string }>;
+}) {
+  const { season } = await searchParams;
+  const all = await loadGames();
+  const seasons = listSeasons(all.map((g) => g.game.date));
+  const current = resolveSeason(seasons, season);
+  const games = all.filter((g) => seasonOf(g.game.date) === current);
   const players = await loadPlayers();
   const s = aggregateSeason(games);
   const name = (id: string) => players.get(id) ?? id;
@@ -53,7 +61,8 @@ export default async function SeasonPage() {
 
   return (
     <div>
-      <h1>{SEASON} シーズン成績</h1>
+      <h1>{current}年 シーズン成績</h1>
+      <SeasonNav seasons={seasons} current={current} basePath="/season" />
       <p className="muted">
         {games.length} 試合（{games.filter((g) => g.game.result?.outcome === "win").length} 勝）
         ・各表のヘッダをクリックで並べ替え

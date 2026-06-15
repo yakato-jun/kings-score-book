@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { loadGames } from "@/lib/db/games";
+import { listSeasons, resolveSeason, seasonOf } from "@/lib/season";
+import { SeasonNav } from "@/components/SeasonNav";
 
 export const dynamic = "force-dynamic";
 
@@ -9,11 +11,23 @@ const OUTCOME: Record<string, [string, string]> = {
   tie: ["tie", "△"],
 };
 
-export default async function GamesPage() {
-  const games = (await loadGames()).sort((a, b) => b.game.date.localeCompare(a.game.date));
+export default async function GamesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ season?: string }>;
+}) {
+  const { season } = await searchParams;
+  const all = await loadGames();
+  const seasons = listSeasons(all.map((g) => g.game.date));
+  const current = resolveSeason(seasons, season);
+  const games = all
+    .filter((g) => seasonOf(g.game.date) === current)
+    .sort((a, b) => b.game.date.localeCompare(a.game.date));
+
   return (
     <div>
       <h1>試合一覧</h1>
+      <SeasonNav seasons={seasons} current={current} basePath="/games" />
       <p className="muted">対戦は「先攻 - 後攻」（左が先攻・右が後攻）。キングスを太字表示。</p>
       <table>
         <thead>
@@ -27,7 +41,6 @@ export default async function GamesPage() {
           {games.map((g) => {
             const r = g.game.result;
             const [oCls, mark] = (r && OUTCOME[r.outcome]) ?? ["", ""];
-            // 左=先攻, 右=後攻。away=キングスが先攻=左。home=キングスが後攻=右。不戦(null)はキングス左。
             const kingsLeft = g.game.home_away !== "home";
             const left = {
               kings: kingsLeft,
@@ -47,11 +60,11 @@ export default async function GamesPage() {
               <tr key={g.game.id}>
                 <td><Link href={`/games/${g.game.id}`}>{g.game.date}</Link></td>
                 <td className="muted">{g.game.league ?? ""}</td>
-                <td className="teamL">{teamName(left)}</td>
-                <td className="sc teamL"><span className={scoreCls(left)}>{left.score ?? "-"}</span></td>
-                <td className="dash">-</td>
-                <td className="sc teamR"><span className={scoreCls(right)}>{right.score ?? "-"}</span></td>
-                <td className="teamR">{teamName(right)}</td>
+                <td className="teamL mtL">{teamName(left)}</td>
+                <td className="sc mtM"><span className={scoreCls(left)}>{left.score ?? "-"}</span></td>
+                <td className="dash mtM">-</td>
+                <td className="sc teamR mtM"><span className={scoreCls(right)}>{right.score ?? "-"}</span></td>
+                <td className="teamR mtR">{teamName(right)}</td>
                 <td className={oCls}>{mark}{r?.decided_by === "forfeit" ? <span className="muted">不戦</span> : ""}</td>
               </tr>
             );

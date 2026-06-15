@@ -23,3 +23,11 @@ td.sc { width: 2.4em; font-weight: 600; }
 td.dash { text-align: center; color: #9ca3af; width: 1em; padding-left: 2px; padding-right: 2px; }
 .teamL { text-align: right; }
 .teamR { text-align: left; }
+/* 対戦5セルの内側の縦線を消し、ひとつの対戦表示に見せる */
+td.mtL { border-right: none; }
+td.mtM { border-left: none; border-right: none; }
+td.mtR { border-left: none; }
+
+.seasonnav { margin: 0.25rem 0 1rem; }
+.seasonnav a { display: inline-block; padding: 3px 12px; margin-right: 6px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff; color: #374151; }
+.seasonnav a.active { background: #111827; color: #fff; border-color: #111827; }
