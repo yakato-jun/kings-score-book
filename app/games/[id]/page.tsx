@@ -30,12 +30,12 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
 
   // イニング別 打席結果グリッド: batter_id → inning → ラベル[]
   const batHalf = away ? "top" : "bottom";
-  const grid = new Map<string, Map<number, { text: string; hit: boolean }[]>>();
+  const grid = new Map<string, Map<number, { text: string; hit: boolean; rbi: boolean }[]>>();
   for (const pa of doc.plate_appearances) {
     if (pa.half !== batHalf) continue;
     const lab = paResultLabel(pa);
     if (!lab.text) continue;
-    const bi = grid.get(pa.batter_id) ?? new Map<number, { text: string; hit: boolean }[]>();
+    const bi = grid.get(pa.batter_id) ?? new Map<number, { text: string; hit: boolean; rbi: boolean }[]>();
     bi.set(pa.inning, [...(bi.get(pa.inning) ?? []), lab]);
     grid.set(pa.batter_id, bi);
   }
@@ -79,7 +79,7 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
       {batting.length > 0 && (
         <>
           <h2>打撃</h2>
-          <p className="muted">() = 先発守備位置 / 安打は赤字</p>
+          <p className="muted">() = 先発守備位置 / <span className="hit">安打は赤字</span> / <span className="rbi">打点は太字</span></p>
           <table>
             <thead>
               <tr>
@@ -99,7 +99,7 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
                     return (
                       <td key={i} className="grid">
                         {cell.map((l, j) => (
-                          <span key={j} className={l.hit ? "hit" : ""}>{j > 0 ? " " : ""}{l.text}</span>
+                          <span key={j} className={[l.hit ? "hit" : "", l.rbi ? "rbi" : ""].filter(Boolean).join(" ")}>{j > 0 ? " " : ""}{l.text}</span>
                         ))}
                       </td>
                     );
