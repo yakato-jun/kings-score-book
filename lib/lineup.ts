@@ -52,22 +52,23 @@ export function paResultLabel(pa: {
   const rbi = (pa.runs ?? []).some((r) => r.rbi);
   if (pa.complete === false || pa.result === "INC" || !pa.result) return { text: "", hit: false, rbi: false };
   const pos = pa.fielding?.hit_to ? POS_ABBR[pa.fielding.hit_to] ?? "" : "";
+  // 構造化フィールド(hit_to/hit_type)のみを読む。方向が無ければフル語へ救済(noteは見ない)。
   const base: { text: string; hit: boolean } = (() => {
     switch (pa.result) {
-      case "HR": return { text: "本", hit: true };
-      case "H1": return { text: `${pos}安`, hit: true };
-      case "H2": return { text: `${pos}二`, hit: true };
-      case "H3": return { text: `${pos}三`, hit: true };
+      case "HR": return { text: pos ? `${pos}本` : "本塁打", hit: true };
+      case "H1": return { text: pos ? `${pos}安` : "安打", hit: true };
+      case "H2": return { text: pos ? `${pos}二` : "二塁打", hit: true };
+      case "H3": return { text: pos ? `${pos}三` : "三塁打", hit: true };
       case "K": return { text: "三振", hit: false };
       case "BB": return { text: pa.intentional ? "敬遠" : "四球", hit: false };
       case "HBP": return { text: "死球", hit: false };
       case "SH": return { text: "犠打", hit: false };
       case "SF": return { text: "犠飛", hit: false };
-      case "E": return { text: `${pos}失`, hit: false };
-      case "FC": return { text: `${pos}ゴロ`, hit: false };
+      case "E": return { text: pos ? `${pos}失` : "失策", hit: false };
+      case "FC": return { text: pos ? `${pos}ゴロ` : "野選", hit: false };
       case "OUT": {
         const ht = pa.fielding?.hit_type ? HIT_TYPE[pa.fielding.hit_type] ?? "" : "";
-        return { text: pos || ht ? `${pos}${ht}` : "凡退", hit: false };
+        return { text: pos && ht ? `${pos}${ht}` : ht || "凡打", hit: false };
       }
       default: return { text: pa.result ?? "", hit: false };
     }
