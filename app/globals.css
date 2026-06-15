@@ -18,9 +18,8 @@ tr:hover td { background: #f9fafb; }
 .tie { color: #6b7280; }
 .muted { color: #6b7280; font-size: 0.85rem; }
 .l { text-align: left; }
-.score { text-align: left; font-variant-numeric: tabular-nums; }
-.score b { font-size: 1.02rem; }
-.badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; }
-.badge.first { background: #dbeafe; color: #1d4ed8; }
-.badge.last { background: #fef3c7; color: #b45309; }
-.badge.none { background: #f3f4f6; color: #6b7280; }
+.tl { text-align: left; }
+td.sc { width: 2.4em; font-weight: 600; }
+td.dash { text-align: center; color: #9ca3af; width: 1em; padding-left: 2px; padding-right: 2px; }
+.teamL { text-align: right; }
+.teamR { text-align: left; }
