@@ -163,6 +163,13 @@ export interface AdditionalPlayer {
   type: string; // opponent | guest ...
 }
 
+/** 選手マスタ（id→名前）。名前は機密のためリポ外→Atlas players コレクション経由 */
+export interface Player {
+  id: string;
+  name: string;
+  type?: string;
+}
+
 /** 投手の記録員判断（自責点など）。OBR9.16の回再構成を伴うため集計で再計算せず記録値を正本にする。 */
 export interface PitchingRecord {
   pitcher_id: string;

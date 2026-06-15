@@ -1,8 +1,18 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem" }}>
+    <div>
       <h1>N-KINGS スコアブック</h1>
-      <p>Phase1: 集計表示（準備中）</p>
-    </main>
+      <p className="muted">草野球チーム N-KINGS の成績集計（Phase1: 読み取り専用表示）</p>
+      <ul>
+        <li>
+          <Link href="/season">シーズン成績</Link> — 選手別の打撃・投手・守備・出欠
+        </li>
+        <li>
+          <Link href="/games">試合一覧</Link> — 各試合のボックススコア
+        </li>
+      </ul>
+    </div>
   );
 }

@@ -73,3 +73,35 @@ export interface SeasonBox {
 export function ipFromOuts(outs: number): number {
   return Math.floor(outs / 3) + (outs % 3) / 10;
 }
+
+/** 表示用: 投球回 "5.2" 形式の文字列 */
+export function ipStr(outs: number): string {
+  return `${Math.floor(outs / 3)}.${outs % 3}`;
+}
+/** .333 形式（先頭0を落とす） */
+export function rate3(x: number): string {
+  return x.toFixed(3).replace(/^0(?=\.)/, "");
+}
+export function avg(b: BattingLine): number {
+  return b.ab ? b.h / b.ab : 0;
+}
+export function obp(b: BattingLine): number {
+  const d = b.ab + b.bb + b.hbp + b.sf;
+  return d ? (b.h + b.bb + b.hbp) / d : 0;
+}
+export function slg(b: BattingLine): number {
+  const tb = b.b1 + 2 * b.b2 + 3 * b.b3 + 4 * b.hr;
+  return b.ab ? tb / b.ab : 0;
+}
+export function ops(b: BattingLine): number {
+  return obp(b) + slg(b);
+}
+/** 防御率（9イニング換算 = 自責*27/アウト数） */
+export function era(p: PitchingLine): number {
+  return p.outs ? (p.er * 27) / p.outs : 0;
+}
+/** 守備率 = (刺殺+捕殺)/(刺殺+捕殺+失策) */
+export function fpct(f: FieldingLine): number {
+  const c = f.po + f.a + f.e;
+  return c ? (f.po + f.a) / c : 0;
+}
