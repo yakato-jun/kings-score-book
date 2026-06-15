@@ -23,6 +23,7 @@ export interface BattingLine {
 
 export interface PitchingLine {
   player_id: string;
+  scope: "own" | "guest";
   g: number;        // 登板試合数
   outs: number;     // 投球アウト数(IP*3)
   bf: number;       // 対打者
@@ -38,6 +39,7 @@ export interface PitchingLine {
 
 export interface FieldingLine {
   player_id: string;
+  scope: "own" | "guest";
   g: number;
   po: number;       // 刺殺
   a: number;        // 捕殺

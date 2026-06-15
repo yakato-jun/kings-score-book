@@ -106,7 +106,7 @@ function bget(m: Accum<BattingLine>, pid: string): BattingLine {
 function pget(m: Accum<PitchingLine>, pid: string): PitchingLine {
   let x = m.get(pid);
   if (!x) {
-    x = { player_id: pid, g: 0, outs: 0, bf: 0, h: 0, hr: 0, k: 0, bb: 0, hbp: 0, r: 0, er: 0, wp: 0 };
+    x = { player_id: pid, scope: scopeOf(pid), g: 0, outs: 0, bf: 0, h: 0, hr: 0, k: 0, bb: 0, hbp: 0, r: 0, er: 0, wp: 0 };
     m.set(pid, x);
   }
   return x;
@@ -114,7 +114,7 @@ function pget(m: Accum<PitchingLine>, pid: string): PitchingLine {
 function fget(m: Accum<FieldingLine>, pid: string): FieldingLine {
   let x = m.get(pid);
   if (!x) {
-    x = { player_id: pid, g: 0, po: 0, a: 0, e: 0, tc: 0 };
+    x = { player_id: pid, scope: scopeOf(pid), g: 0, po: 0, a: 0, e: 0, tc: 0 };
     m.set(pid, x);
   }
   return x;
@@ -291,6 +291,18 @@ export function aggregateSeason(docs: GameDoc[]): SeasonBox {
       if (a.status === "played") t.played += 1; else t.bench += 1;
     }
   }
+  // 試合数(試)は出場数(attendance.played)を正本にする。
+  // 打席や守備機会が無い試合でも出場していれば数える。投手の登板数(g)は登板ベースのまま。
+  const playedBy = new Map([...att.values()].map((a) => [a.player_id, a.played]));
+  for (const line of b.values()) {
+    const pl = playedBy.get(line.player_id);
+    if (pl !== undefined) line.g = pl;
+  }
+  for (const line of f.values()) {
+    const pl = playedBy.get(line.player_id);
+    if (pl !== undefined) line.g = pl;
+  }
+
   return {
     games: docs.length,
     batting: [...b.values()],

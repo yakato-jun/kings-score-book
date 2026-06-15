@@ -200,4 +200,20 @@ describe("不戦勝・出欠・シーズン集計", () => {
     const season = aggregateSeason([mk(), mk()]);
     expect(season.batting.find((b) => b.player_id === "P1")!.h).toBe(2);
   });
+  it("試合数は出場(attendance.played)ベース: 打席が無い試合も数える", () => {
+    const g1 = doc({
+      home_away: "away",
+      plate_appearances: [pa({ order: 1, batter_id: "P1", result: "H1" })],
+      attendance: [{ player_id: "P1", status: "played", scope: "own" }],
+    });
+    const g2 = doc({
+      home_away: "away",
+      plate_appearances: [], // P1は出場したが打席なし
+      attendance: [{ player_id: "P1", status: "played", scope: "own" }],
+    });
+    const season = aggregateSeason([g1, g2]);
+    const p1 = season.batting.find((b) => b.player_id === "P1")!;
+    expect(p1.g).toBe(2); // 打席は1試合でも出場2試合
+    expect(p1.h).toBe(1);
+  });
 });
