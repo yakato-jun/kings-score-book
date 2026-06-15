@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aggregateGame, aggregateSeason } from "../agg";
+import { aggregateGame, aggregateSeason, gameLineScore } from "../agg";
 import type { GameBox } from "../agg/types";
 import { doc, defPA, pa, snap, LINEUP } from "./fixtures";
 
@@ -193,6 +193,27 @@ describe("不戦勝・出欠・シーズン集計", () => {
     const a9 = season.attendance.find((a) => a.player_id === "P9")!;
     expect([a1.games, a1.played]).toEqual([1, 1]);
     expect([a9.games, a9.bench]).toEqual([1, 1]);
+  });
+  it("ラインスコア: 回別得点・安打・失策", () => {
+    const d = doc({
+      home_away: "away",
+      plate_appearances: [
+        pa({ inning: 1, half: "top", batter_id: "P1", result: "H1" }),
+        pa({
+          inning: 1, half: "top", batter_id: "P2", result: "HR",
+          runs: [
+            { runner_id: "P1", rbi: true, earned: true, cause: "hr" },
+            { runner_id: "P2", rbi: true, earned: true, cause: "hr" },
+          ],
+        }),
+        pa({ inning: 1, half: "bottom", batter_id: "O1", result: "E", fielding: { hit_to: "6", sequence: ["6"], outs: [], errors: [{ pos: "6", type: "fielding" }] } }),
+      ],
+    });
+    const ls = gameLineScore(d);
+    expect(ls.topRuns[0]).toBe(2);
+    expect(ls.bottomRuns[0]).toBe(0);
+    expect(ls.topHits).toBe(2);
+    expect(ls.bottomErrors).toBe(1);
   });
   it("2試合のシーズン合算(安打が積算)", () => {
     const mk = () =>

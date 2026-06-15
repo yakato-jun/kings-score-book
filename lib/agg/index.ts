@@ -144,6 +144,34 @@ function creditErrors(errs: { pos: string }[] | undefined, pm: Map<string, strin
   }
 }
 
+export interface LineScore {
+  innings: number;
+  topRuns: number[];
+  bottomRuns: number[];
+  topHits: number;
+  bottomHits: number;
+  topErrors: number; // top(表)の打席中に起きた失策＝後攻チームの守備失策
+  bottomErrors: number; // bottom(裏)の打席中＝先攻チームの守備失策
+}
+
+/** 回別得点・安打・失策(ラインスコア)を試合docから集計 */
+export function gameLineScore(doc: GameDoc): LineScore {
+  const pas = doc.plate_appearances;
+  const innings = pas.reduce((m, p) => Math.max(m, p.inning), 0);
+  const topRuns = Array(innings).fill(0);
+  const bottomRuns = Array(innings).fill(0);
+  let topHits = 0, bottomHits = 0, topErrors = 0, bottomErrors = 0;
+  for (const p of pas) {
+    const top = p.half === "top";
+    (top ? topRuns : bottomRuns)[p.inning - 1] += p.runs.length;
+    if (IS_HIT.has(p.result)) top ? topHits++ : bottomHits++;
+    let errs = p.fielding?.errors?.length ?? 0;
+    for (const bd of p.baserunning_during ?? []) errs += bd.fielding?.errors?.length ?? 0;
+    if (top) topErrors += errs; else bottomErrors += errs;
+  }
+  return { innings, topRuns, bottomRuns, topHits, bottomHits, topErrors, bottomErrors };
+}
+
 export function aggregateGame(doc: GameDoc): GameBox {
   const batting: Accum<BattingLine> = new Map();
   const pitching: Accum<PitchingLine> = new Map();

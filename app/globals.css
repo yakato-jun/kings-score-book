@@ -28,6 +28,13 @@ td.mtL { border-right: none; }
 td.mtM { border-left: none; border-right: none; }
 td.mtR { border-left: none; }
 
+td.grid, th.grid { text-align: center; min-width: 3.2em; font-size: 0.78rem; }
+.hit { color: #dc2626; font-weight: 600; }
+
+table.linescore { width: auto; margin-bottom: 1.25rem; }
+.linescore .tm { font-weight: 600; padding-right: 1.5rem; }
+.linescore th, .linescore td { min-width: 1.6em; }
+
 .seasonnav { margin: 0.25rem 0 1rem; }
 .seasonnav a { display: inline-block; padding: 3px 12px; margin-right: 6px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff; color: #374151; }
 .seasonnav a.active { background: #111827; color: #fff; border-color: #111827; }
