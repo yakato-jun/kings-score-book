@@ -4,7 +4,7 @@
  * (実際の適用はユーザーが承認ボタンで行う＝下書きコミット)。機密(名前/接続情報)はサーバ内で完結。
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { loadGame } from "@/lib/db/games";
+import { loadWorking } from "@/lib/db/games";
 import { listGameMeta, upsertGameMeta, setAttendance, importGameDoc } from "@/lib/ops/games";
 import { listPlayers, upsertPlayer } from "@/lib/ops/players";
 
@@ -15,7 +15,7 @@ const WRITE = new Set(["upsertGameMeta", "setAttendance", "importGameDoc", "upse
 
 const TOOLS: Anthropic.Tool[] = [
   { name: "listGames", description: "全試合のメタ情報(id/日付/相手/リーグ/先後/結果)一覧を返す", input_schema: { type: "object", properties: {} } },
-  { name: "getGame", description: "1試合の完全docを返す(打席含む)", input_schema: { type: "object", properties: { id: { type: "string", description: "G20260607 形式" } }, required: ["id"] } },
+  { name: "getGame", description: "1試合の作業中doc(下書き含む最新・打席含む)を返す。打席を追記/修正する前に必ずこれで現状を読む", input_schema: { type: "object", properties: { id: { type: "string", description: "G20260607 形式" } }, required: ["id"] } },
   { name: "listPlayers", description: "選手マスタ(id/名前/種別)一覧を返す", input_schema: { type: "object", properties: {} } },
   {
     name: "upsertGameMeta", description: "試合メタ情報の追加/編集を提案する",
@@ -57,6 +57,13 @@ function systemPrompt(dict: string, scene?: Scene): string {
     '    "attendance":[{"player_id":…,"status":"played","scope":(助っ人"guest"/他"own")}...], "plate_appearances":[] }',
     "  守備位置ID: 1=投 2=捕 3=一 4=二 5=三 6=遊 7=左 8=中 9=右、DH。先後 away=先攻(表で攻撃)/home=後攻(裏)。打順の先頭に守備位置番号が来る記法(例『5 (選手名)』は5=三塁の意味)に注意。",
     "既存試合のメタや出欠の小さな修正だけなら upsertGameMeta / setAttendance を使ってよい。",
+    "【打席結果の入力】打席を足す/直すときは、まず getGame で現状(下書き含む)を読み、plate_appearances に追記・修正した『完全な試合doc』(全打席を含む)を importGameDoc で1提案にする。打席1件の形:",
+    '  { "inning":N, "half":"top"(先攻の攻撃)|"bottom"(後攻の攻撃), "order":(その半イニング内の打席番号1..), "batting_slot":(打順1..), "outs":(開始時0-2), "runners":{"first":走者id|null,"second":..,"third":..}, "batter_id":…, "pitcher_id":…, "catcher_id":…, "result":コード, "complete":true, "runs":[], "fielding":{…}|null, "baserunning_during":[], "baserunning_after":[], "note":(任意の実況。盗塁/暴投等の走塁描写は書かず baserunning へ。曖昧は annotations:[{type:"unclear",detail}] に) }',
+    "  result: H1単打 H2二塁打 H3三塁打 HR本塁打 OUT凡退 K三振 BB四球 HBP死球 FC野選 E失策 SH犠打 SF犠飛 (未完了は complete:false)。",
+    '  runs[](得点が出た打席だけ): 各生還1件 {"runner_id","rbi":打点が付くか,"earned":自責か,"cause":"hit"|"hr"|"walk"|"hbp"|"sf"|"sh"|"error"|"wp"|"pb"|"sb"|"groundout"|"fc"|"other"}。得点=配列長/打点=rbi:true数/自責=earned:true数。エラー・暴投・捕逸・盗塁での生還は rbi:false。',
+    '  fielding(打球がある時): {"hit_to":"1-9","hit_type":"G"(ゴロ)/"F"(飛)/"L"(直),"sequence":["6","4","3"等],"outs":[{"at":"1"/"2"/"3"/"home"/"-","type":"force"/"tag"/"catch","runner_id":id|null}],"errors":[{"pos","type"}]}。三振/四死球は fielding:null。',
+    '  baserunning_after: 打球での走者移動 [{"runner_id","from":"1"/"2"/"3"/null,"to":"1"/"2"/"3"/"home"/"out","reason"}]。baserunning_during: 打席中の盗塁/暴投等 [{"event":"SB"/"WP"/"PB"/"PO"/"CS"/"BK","runners":[{"runner_id","from","to"}],"note"}]。',
+    "  自軍は home_away で決まる半(away→top / home→bottom)で攻撃、相手はもう一方。相手打者IDは O001 から打順順(O001=1番…)。自信が無い所は推測で埋めず確認する。",
     `自軍の選手名解決用(ユーザーには見せない): ${dict}`,
     scene && Object.keys(scene).length ? `現在のシーン: ${JSON.stringify(scene)}。「この試合/この打席/彼」はこの文脈で解決。` : "現在のシーン: なし(グローバル)。",
     "曖昧な点はユーザーに確認。日本語で簡潔に。",
@@ -68,8 +75,8 @@ async function execRead(name: string, input: Record<string, unknown>): Promise<s
     if (name === "listGames") return JSON.stringify(await listGameMeta());
     if (name === "listPlayers") return JSON.stringify(await listPlayers());
     if (name === "getGame") {
-      const d = await loadGame(String(input.id ?? ""));
-      return d ? JSON.stringify(d) : "(該当試合なし)";
+      const w = await loadWorking(String(input.id ?? ""));
+      return w ? JSON.stringify(w.doc) : "(該当試合なし)";
     }
     return `(未知の読み取りツール: ${name})`;
   } catch (e) {
