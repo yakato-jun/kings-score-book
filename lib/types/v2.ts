@@ -185,6 +185,26 @@ export interface PitchingRecord {
   decision?: "W" | "L" | "S" | null; // [任意] 勝敗/セーブも記録員判断。将来拡張用
 }
 
+/** 履歴1版が記録した操作（監査・逆操作生成の補助。中抜き機構は依存しない＝任意） */
+export interface GameOp {
+  type: string;
+  args?: unknown;
+}
+
+/**
+ * 試合履歴の1版（append-only）。最新スナップショット(games)とは別の履歴コレクションに版ごとに1doc。
+ * 編集/ロールバック/中抜き(revert)/下書き=すべて先端に1版appendするだけ（線形・枝分かれなし）。
+ */
+export interface GameVersion {
+  game_id: string;
+  gen: number; // 1始まり（gen0=履歴前のシード状態の暗黙値）
+  snapshot: GameDoc;
+  op?: GameOp | null;
+  updated_at: string; // ISO
+  updated_by: string; // 当面 "ui" | "ai" | "seed"、認証後にユーザーID
+  draft: boolean; // true=履歴に積むが games(最新) は更新しない
+}
+
 /** 1試合の完全ドキュメント（output/G2026xxxx.json） */
 export interface GameDoc {
   schema_version: "2.0";

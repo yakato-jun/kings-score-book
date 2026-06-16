@@ -2,7 +2,7 @@
  * 試合データの操作レイヤ。Atlas を正本に書き込む。管理UIとAI入力の双方がこれを呼ぶ。
  * 詳細な打席編集は画面では作らず、JSON取込(importGameDoc)で丸ごと差し替える方針。
  */
-import { loadGames, loadGame, writeGameDoc } from "@/lib/db/games";
+import { loadGames, loadGame, commitGameDoc } from "@/lib/db/games";
 import type { GameDoc, Game, GameResult, AttendanceEntry } from "@/lib/types/v2";
 
 /** 一覧用に各試合のメタ(game)だけ返す */
@@ -52,14 +52,14 @@ export async function upsertGameMeta(input: GameMetaInput): Promise<void> {
         plate_appearances: [],
         attendance: [],
       };
-  await writeGameDoc(doc);
+  await commitGameDoc(doc, { source: "ui", op: { type: "upsertGameMeta", args: { id: input.id } } });
 }
 
 /** 出欠の設定。played/bench のみを保存（欠席はエントリ無し）。 */
 export async function setAttendance(gameId: string, entries: AttendanceEntry[]): Promise<void> {
   const doc = await loadGame(gameId);
   if (!doc) throw new Error(`試合 ${gameId} が見つかりません`);
-  await writeGameDoc({ ...doc, attendance: entries });
+  await commitGameDoc({ ...doc, attendance: entries }, { source: "ui", op: { type: "setAttendance", args: { gameId, count: entries.length } } });
 }
 
 /** 試合doc を JSON 文字列から取り込み（丸ごと upsert）。構造を軽く検証。 */
@@ -71,7 +71,7 @@ export async function importGameDoc(json: string): Promise<string> {
     throw new Error("JSON の構文が不正です");
   }
   validateGameDoc(doc);
-  await writeGameDoc(doc);
+  await commitGameDoc(doc, { source: "ui", op: { type: "importGameDoc", args: { id: doc.game.id } } });
   return doc.game.id;
 }
 
