@@ -105,6 +105,22 @@ table.linescore { width: auto; margin-bottom: 1.25rem; }
 .attgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.4rem 1rem; margin-bottom: 0.7rem; }
 .attrow { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
 .attrow .aname { font-size: 0.9rem; }
+/* AIチャット */
+.chatlog { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 0.8rem; min-height: 8rem; margin: 0.5rem 0; }
+.chatmsg { margin: 0 0 0.7rem; }
+.chatmsg .who { font-size: 0.75rem; color: #6b7280; }
+.chatmsg .bubble { white-space: pre-wrap; padding: 0.4rem 0.6rem; border-radius: 6px; margin-top: 2px; }
+.chatmsg.user .bubble { background: #eff6ff; }
+.chatmsg.assistant .bubble { background: #f3f4f6; }
+.proposals { margin: 0.5rem 0 1rem; }
+.proposal { border: 1px solid #d1d5db; border-radius: 6px; padding: 0.5rem 0.7rem; margin: 0 0 0.5rem; }
+.proposal pre { background: #f9fafb; border: 1px solid #eee; border-radius: 4px; padding: 0.4rem 0.6rem; overflow-x: auto; font-size: 0.78rem; margin: 0.3rem 0; }
+.proposal button { padding: 4px 12px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 4px; cursor: pointer; font-size: 0.85rem; margin-left: 0.5rem; }
+.chatinput { display: flex; gap: 0.5rem; align-items: flex-start; }
+.chatinput textarea { flex: 1; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; font-family: inherit; }
+.chatinput button { padding: 6px 16px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+.proposal details summary { cursor: pointer; font-size: 0.8rem; color: #9ca3af; }
+.previewbar { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.35rem 0.7rem; font-size: 0.85rem; margin: 0 0 0.75rem; display: inline-block; }
 
 .seasonnav { margin: 0.25rem 0 1rem; }
 .seasonnav a { display: inline-block; padding: 3px 12px; margin-right: 6px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff; color: #374151; }

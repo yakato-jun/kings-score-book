@@ -2,8 +2,21 @@
  * 試合データの操作レイヤ。Atlas を正本に書き込む。管理UIとAI入力の双方がこれを呼ぶ。
  * 詳細な打席編集は画面では作らず、JSON取込(importGameDoc)で丸ごと差し替える方針。
  */
-import { loadGames, loadGame, commitGameDoc } from "@/lib/db/games";
-import type { GameDoc, Game, GameResult, AttendanceEntry } from "@/lib/types/v2";
+import { loadGames, loadGame, loadWorking, commitGameDoc } from "@/lib/db/games";
+import type { GameDoc, Game, GameResult, AttendanceEntry, GameOp } from "@/lib/types/v2";
+
+/** コミットの共通オプション。UIは既定(ui/非draft)、AIは {source:"ai", draft:true} を渡す。 */
+export interface CommitOpts {
+  source?: string;
+  draft?: boolean;
+  base_gen?: number;
+}
+const co = (o: CommitOpts, op: GameOp) => ({
+  source: o.source ?? "ui",
+  draft: o.draft ?? false,
+  base_gen: o.base_gen,
+  op,
+});
 
 /** 一覧用に各試合のメタ(game)だけ返す */
 export async function listGameMeta(): Promise<Game[]> {
@@ -22,12 +35,12 @@ export interface GameMetaInput {
 }
 
 /** メタ情報の編集/新規。既存docがあれば game だけ差し替え、無ければ空のシェルを作る。 */
-export async function upsertGameMeta(input: GameMetaInput): Promise<void> {
+export async function upsertGameMeta(input: GameMetaInput, opts: CommitOpts = {}): Promise<void> {
   if (!/^G\d{8}$/.test(input.id)) throw new Error(`試合IDは G20260607 形式で必須です（受領: "${input.id}"）`);
   if (!input.date) throw new Error("日付は必須です");
   if (!input.opponent?.trim()) throw new Error("対戦相手は必須です");
 
-  const existing = await loadGame(input.id);
+  const existing = (await loadWorking(input.id))?.doc ?? null; // 作業中(下書き)があればその上に積む
   // 結果は編集対象(スコア/勝敗/決着)以外の既存フィールド(scheduled_innings/line_score)を保持する
   const result: GameResult | null = input.result
     ? { ...existing?.game.result, ...input.result }
@@ -52,18 +65,25 @@ export async function upsertGameMeta(input: GameMetaInput): Promise<void> {
         plate_appearances: [],
         attendance: [],
       };
-  await commitGameDoc(doc, { source: "ui", op: { type: "upsertGameMeta", args: { id: input.id } } });
+  await commitGameDoc(doc, co(opts, { type: "upsertGameMeta", args: { id: input.id } }));
 }
 
 /** 出欠の設定。played/bench のみを保存（欠席はエントリ無し）。 */
-export async function setAttendance(gameId: string, entries: AttendanceEntry[]): Promise<void> {
-  const doc = await loadGame(gameId);
+export async function setAttendance(gameId: string, entries: AttendanceEntry[], opts: CommitOpts = {}): Promise<void> {
+  const doc = (await loadWorking(gameId))?.doc ?? null; // 作業中(下書き)を基準に積む
   if (!doc) throw new Error(`試合 ${gameId} が見つかりません`);
-  await commitGameDoc({ ...doc, attendance: entries }, { source: "ui", op: { type: "setAttendance", args: { gameId, count: entries.length } } });
+  await commitGameDoc({ ...doc, attendance: entries }, co(opts, { type: "setAttendance", args: { gameId, count: entries.length } }));
+}
+
+/** 作業中の下書きを確定(publish)＝最新スナップショットを games(公開) に反映。 */
+export async function publishGame(gameId: string, opts: CommitOpts = {}): Promise<void> {
+  const w = await loadWorking(gameId);
+  if (!w) throw new Error(`試合 ${gameId} が見つかりません`);
+  await commitGameDoc(w.doc, co({ ...opts, draft: false }, { type: "publish", args: { gameId, from_gen: w.gen } }));
 }
 
 /** 試合doc を JSON 文字列から取り込み（丸ごと upsert）。構造を軽く検証。 */
-export async function importGameDoc(json: string): Promise<string> {
+export async function importGameDoc(json: string, opts: CommitOpts = {}): Promise<string> {
   let doc: unknown;
   try {
     doc = JSON.parse(json);
@@ -71,7 +91,7 @@ export async function importGameDoc(json: string): Promise<string> {
     throw new Error("JSON の構文が不正です");
   }
   validateGameDoc(doc);
-  await commitGameDoc(doc, { source: "ui", op: { type: "importGameDoc", args: { id: doc.game.id } } });
+  await commitGameDoc(doc, co(opts, { type: "importGameDoc", args: { id: doc.game.id } }));
   return doc.game.id;
 }
 

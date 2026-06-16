@@ -12,6 +12,8 @@ export interface PlayerInput {
 }
 
 function validate(p: Player): void {
+  if (/^G/i.test(p.id))
+    throw new Error("助っ人(Gで始まるID)は選手マスタには登録しません。試合の出場選手(additional_players)として、その試合の中で記録してください。");
   if (!/^P\d{3}$/.test(p.id)) throw new Error(`選手IDは P001 形式で必須です（受領: "${p.id}"）`);
   if (!p.name) throw new Error("選手名は必須です");
 }

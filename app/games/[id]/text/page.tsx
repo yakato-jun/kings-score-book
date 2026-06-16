@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { loadGame } from "@/lib/db/games";
+import { loadGame, loadWorking } from "@/lib/db/games";
 import { loadPlayers } from "@/lib/db/players";
 import { halfInnings, situationLabel, playLine, batterLabel, paAnchor, duringLines } from "@/lib/textlog";
 import { POS_ABBR } from "@/lib/lineup";
@@ -9,18 +9,21 @@ import { playerName } from "@/lib/names";
 
 export const dynamic = "force-dynamic";
 
-export default async function GameTextPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function GameTextPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ preview?: string }> }) {
   const { id } = await params;
-  const doc = await loadGame(id);
+  const preview = (await searchParams).preview === "1";
+  const work = preview ? await loadWorking(id) : null;
+  const doc = preview ? work?.doc ?? null : await loadGame(id);
   if (!doc) notFound();
   const players = await loadPlayers();
   const g = doc.game;
 
-  // 相手選手名(あれば)。なければ batterLabel が「N番」にフォールバック
+  // 追加選手の名前(助っ人=guest / 相手=opponent)。無ければマスタ→助っ人N等にフォールバック
+  const addl = new Map((doc.additional_players ?? []).map((a) => [a.id, a.name]));
   const oppNames = new Map(
     (doc.additional_players ?? []).filter((a) => a.type === "opponent").map((a) => [a.id, a.name])
   );
-  const nameOf = (pid: string) => oppNames.get(pid) ?? playerName(pid, players);
+  const nameOf = (pid: string) => addl.get(pid) ?? playerName(pid, players);
 
   const away = g.home_away === "away";
   const firstName = away ? "キングス" : g.opponent; // 先攻(表)
@@ -38,8 +41,11 @@ export default async function GameTextPage({ params }: { params: Promise<{ id: s
   return (
     <div>
       <p className="muted" style={{ margin: "0 0 0.5rem" }}>
-        <Link href={`/games/${id}`}>← ボックススコア</Link>
+        <Link href={`/games/${id}${preview ? "?preview=1" : ""}`}>← ボックススコア</Link>
       </p>
+      {preview && (
+        <p className="previewbar">下書きプレビュー（gen {work?.gen}・未公開）　<Link href={`/games/${id}/text`}>公開版へ</Link></p>
+      )}
       <h1>{g.date}　テキスト速報</h1>
       <p className="muted">
         {firstName}（先攻） vs {secondName}（後攻）
@@ -56,7 +62,7 @@ export default async function GameTextPage({ params }: { params: Promise<{ id: s
                 <tr key={e.player_id}>
                   <td>{e.order ?? "－"}</td>
                   <td>{e.position_id ? POS_ABBR[e.position_id] ?? e.position_id : ""}</td>
-                  <td className="tl">{playerName(e.player_id, players)}</td>
+                  <td className="tl">{nameOf(e.player_id)}</td>
                 </tr>
               ))}
             </tbody>

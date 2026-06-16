@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { loadGame } from "@/lib/db/games";
+import { loadGame, loadWorking } from "@/lib/db/games";
 import { loadPlayers } from "@/lib/db/players";
 import { aggregateGame, gameLineScore } from "@/lib/agg";
 import { ipStr, era } from "@/lib/agg/types";
@@ -11,13 +11,17 @@ import type { Half } from "@/lib/types/v2";
 
 export const dynamic = "force-dynamic";
 
-export default async function GamePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function GamePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ preview?: string }> }) {
   const { id } = await params;
-  const doc = await loadGame(id);
+  const preview = (await searchParams).preview === "1";
+  const work = preview ? await loadWorking(id) : null;
+  const doc = preview ? work?.doc ?? null : await loadGame(id);
   if (!doc) notFound();
   const players = await loadPlayers();
+  // 助っ人/相手の名前は試合docの additional_players から解決(無ければマスタ→助っ人N)
+  const addl = new Map((doc.additional_players ?? []).map((a) => [a.id, a.name]));
   const box = aggregateGame(doc);
-  const name = (pid: string) => playerName(pid, players);
+  const name = (pid: string) => addl.get(pid) ?? playerName(pid, players);
   const g = doc.game;
   const r = g.result;
 
@@ -53,9 +57,12 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
       <p className="muted">
         {g.league ?? ""}　{r ? `${r.our_score} - ${r.their_score}（${{ win: "勝", loss: "負", tie: "分" }[r.outcome]}${r.decided_by === "forfeit" ? "・不戦" : ""}）` : ""}
       </p>
+      {preview && (
+        <p className="previewbar">下書きプレビュー（gen {work?.gen}・未公開）　<Link href={`/games/${id}`}>公開版へ</Link></p>
+      )}
       {hasBatting && (
         <p className="muted" style={{ margin: "0 0 0.5rem" }}>
-          <Link href={`/games/${id}/text`}>テキスト速報 →</Link>
+          <Link href={`/games/${id}/text${preview ? "?preview=1" : ""}`}>テキスト速報 →</Link>
         </p>
       )}
 
