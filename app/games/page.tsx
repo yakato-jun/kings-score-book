@@ -29,7 +29,7 @@ export default async function GamesPage({
       <h1>試合一覧</h1>
       <SeasonNav seasons={seasons} current={current} basePath="/games" />
       <p className="muted">対戦は「先攻 - 後攻」（左が先攻・右が後攻）。キングスを太字表示。</p>
-      <table>
+      <div className="scrollx"><table className="frz1">
         <thead>
           <tr>
             <th>日付</th><th>区分</th>
@@ -70,7 +70,7 @@ export default async function GamesPage({
             );
           })}
         </tbody>
-      </table>
+      </table></div>
     </div>
   );
 }

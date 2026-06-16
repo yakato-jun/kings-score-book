@@ -108,7 +108,7 @@ export function roleLabel(row: LineupRow | undefined): string {
   }
 }
 
-export interface GridCell { text: string; hit: boolean; rbi: boolean; }
+export interface GridCell { text: string; hit: boolean; rbi: boolean; inning: number; half: Half; order: number; }
 
 /**
  * イニング別打席結果グリッド: batter_id → inning → セル[]。
@@ -124,8 +124,9 @@ export function battingGrid(
     if (pa.half !== batHalf) continue;
     const lab = paResultLabel(pa);
     if (!lab.text) continue;
+    const cell: GridCell = { ...lab, inning: pa.inning, half: pa.half, order: pa.order };
     const bi = grid.get(pa.batter_id) ?? new Map<number, GridCell[]>();
-    bi.set(pa.inning, [...(bi.get(pa.inning) ?? []), lab]);
+    bi.set(pa.inning, [...(bi.get(pa.inning) ?? []), cell]);
     grid.set(pa.batter_id, bi);
   }
   return grid;

@@ -22,3 +22,9 @@ export async function loadGame(id: string): Promise<GameDoc | null> {
   const db = await getDb();
   return db.collection<GameDoc>("games").findOne({ "game.id": id }, PROJ);
 }
+
+/** 試合doc を upsert（game.id 一致で置換、無ければ新規）。Atlas が正本。 */
+export async function writeGameDoc(doc: GameDoc): Promise<void> {
+  const db = await getDb();
+  await db.collection<GameDoc>("games").replaceOne({ "game.id": doc.game.id }, doc, { upsert: true });
+}

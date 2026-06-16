@@ -100,7 +100,14 @@ export interface PlateAppearance {
   baserunning_during?: BaserunDuring[];
   baserunning_after: BaserunMove[];
   game_end?: boolean;
-  note?: string | null;
+  note?: string | null; // [表示用] 実況テキスト。システム用注記は annotations[] へ
+  annotations?: Annotation[]; // [システム用] 表示しない記録員メモ
+}
+
+/** [システム用] noteから分離した記録員メモ。type で機械処理(unclear→修正入力, manual=採点根拠, other=自由文) */
+export interface Annotation {
+  type: "unclear" | "manual" | "other";
+  detail: string;
 }
 
 export interface LineupEntry {

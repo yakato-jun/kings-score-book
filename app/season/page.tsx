@@ -5,6 +5,7 @@ import { avg, obp, slg, ops, era, fpct } from "@/lib/agg/types";
 import { SortableTable, type Column } from "@/components/SortableTable";
 import { listSeasons, resolveSeason, seasonOf } from "@/lib/season";
 import { SeasonNav } from "@/components/SeasonNav";
+import { playerName } from "@/lib/names";
 
 // Atlas を実行時に読むため動的レンダリング（ビルド時にDB接続しない）
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export default async function SeasonPage({
   const games = all.filter((g) => seasonOf(g.game.date) === current);
   const players = await loadPlayers();
   const s = aggregateSeason(games);
-  const name = (id: string) => players.get(id) ?? id;
+  const name = (id: string) => playerName(id, players);
 
   // 自軍(own)のみ表示。ゲスト(助っ人)は除外。
   const batRows = s.batting.filter((b) => b.scope === "own").map((b) => ({
@@ -69,13 +70,13 @@ export default async function SeasonPage({
       </p>
 
       <h2>打撃</h2>
-      <SortableTable columns={BAT_COLS} rows={batRows} initialKey="pa" />
+      <SortableTable columns={BAT_COLS} rows={batRows} initialKey="pa" storageKey="season-bat" />
 
       <h2>投手</h2>
-      <SortableTable columns={PIT_COLS} rows={pitRows} initialKey="ip" />
+      <SortableTable columns={PIT_COLS} rows={pitRows} initialKey="ip" storageKey="season-pit" />
 
       <h2>守備</h2>
-      <SortableTable columns={FLD_COLS} rows={fldRows} initialKey="tc" />
+      <SortableTable columns={FLD_COLS} rows={fldRows} initialKey="tc" storageKey="season-fld" />
     </div>
   );
 }

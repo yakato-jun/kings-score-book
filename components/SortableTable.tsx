@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export type Column = {
   key: string;
@@ -21,14 +21,38 @@ export function SortableTable({
   rows,
   initialKey,
   initialDir = -1,
+  storageKey,
 }: {
   columns: Column[];
   rows: Row[];
   initialKey?: string;
   initialDir?: 1 | -1;
+  storageKey?: string; // 指定すると並べ替え状態を localStorage に保存・復元
 }) {
   const [key, setKey] = useState(initialKey ?? columns[0].key);
   const [dir, setDir] = useState<1 | -1>(initialDir);
+
+  // 保存済みの並べ替えを復元(ハイドレーション後)
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      const s = JSON.parse(localStorage.getItem(storageKey) ?? "null");
+      if (s && columns.some((c) => c.key === s.k) && (s.d === 1 || s.d === -1)) {
+        setKey(s.k);
+        setDir(s.d);
+      }
+    } catch {}
+  }, [storageKey, columns]);
+
+  const apply = (k: string, d: 1 | -1) => {
+    setKey(k);
+    setDir(d);
+    if (storageKey) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify({ k, d }));
+      } catch {}
+    }
+  };
 
   const sorted = [...rows].sort((a, b) => {
     const av = a[key];
@@ -38,15 +62,13 @@ export function SortableTable({
   });
 
   const onClick = (k: string) => {
-    if (k === key) setDir((d) => (d === 1 ? -1 : 1));
-    else {
-      setKey(k);
-      setDir(-1);
-    }
+    if (k === key) apply(k, dir === 1 ? -1 : 1);
+    else apply(k, -1);
   };
 
   return (
-    <table>
+    <div className="scrollx">
+    <table className="frz1">
       <thead>
         <tr>
           {columns.map((c) => (
@@ -78,5 +100,6 @@ export function SortableTable({
         ))}
       </tbody>
     </table>
+    </div>
   );
 }

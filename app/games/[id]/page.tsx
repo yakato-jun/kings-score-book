@@ -1,9 +1,12 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { loadGame } from "@/lib/db/games";
 import { loadPlayers } from "@/lib/db/players";
 import { aggregateGame, gameLineScore } from "@/lib/agg";
 import { ipStr, era } from "@/lib/agg/types";
 import { displayLineup, roleLabel, battingGrid } from "@/lib/lineup";
+import { paAnchor } from "@/lib/textlog";
+import { playerName } from "@/lib/names";
 import type { Half } from "@/lib/types/v2";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +17,7 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
   if (!doc) notFound();
   const players = await loadPlayers();
   const box = aggregateGame(doc);
-  const name = (pid: string) => players.get(pid) ?? pid;
+  const name = (pid: string) => playerName(pid, players);
   const g = doc.game;
   const r = g.result;
 
@@ -50,9 +53,14 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
       <p className="muted">
         {g.league ?? ""}　{r ? `${r.our_score} - ${r.their_score}（${{ win: "勝", loss: "負", tie: "分" }[r.outcome]}${r.decided_by === "forfeit" ? "・不戦" : ""}）` : ""}
       </p>
+      {hasBatting && (
+        <p className="muted" style={{ margin: "0 0 0.5rem" }}>
+          <Link href={`/games/${id}/text`}>テキスト速報 →</Link>
+        </p>
+      )}
 
       {ls.innings > 0 && (
-        <table className="linescore">
+        <div className="scrollx"><table className="linescore">
           <thead>
             <tr>
               <th className="tl"></th>
@@ -72,17 +80,17 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
               <td><b>{sum(ls.bottomRuns)}</b></td><td>{ls.bottomHits}</td><td>{ls.topErrors}</td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
       )}
 
       {hasBatting && (
         <>
           <h2>打撃</h2>
           <p className="muted">() = 先発守備位置 / 打=代打 / 走=代走 / <span className="hit">安打は赤</span> / <span className="rbi">打点は太字</span></p>
-          <table>
+          <div className="scrollx"><table className="frz1">
             <thead>
               <tr>
-                <th>位置</th><th className="tl">選手</th>
+                <th className="tl">選手</th><th>位置</th>
                 <th>打数</th><th>安</th><th>点</th><th>得</th><th>球</th><th>振</th><th>盗</th>
                 {innList.map((i) => <th key={i} className="grid">{i}回</th>)}
               </tr>
@@ -94,8 +102,8 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
                 const z = b ?? (row.slot != null ? ZERO : null);
                 return (
                   <tr key={row.player_id}>
-                    <td className="muted">{roleLabel(row)}</td>
                     <td className="tl">{name(row.player_id)}</td>
+                    <td className="muted">{roleLabel(row)}</td>
                     {z ? (
                       <>
                         <td>{z.ab}</td><td>{z.h}</td><td>{z.rbi}</td><td>{z.r}</td><td>{z.bb}</td><td>{z.k}</td><td>{z.sb}</td>
@@ -104,7 +112,7 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
                           return (
                             <td key={i} className="grid">
                               {cell.map((l, j) => (
-                                <span key={j} className={[l.hit ? "hit" : "", l.rbi ? "rbi" : ""].filter(Boolean).join(" ")}>{j > 0 ? " " : ""}{l.text}</span>
+                                <span key={j}>{j > 0 ? " " : ""}<Link href={`/games/${id}/text#${paAnchor(l.inning, l.half, l.order)}`} className={["gridlink", l.hit ? "hit" : "", l.rbi ? "rbi" : ""].filter(Boolean).join(" ")}>{l.text}</Link></span>
                               ))}
                             </td>
                           );
@@ -120,19 +128,19 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
                 );
               })}
               <tr>
-                <td></td><td className="tl">合計</td>
+                <td className="tl">合計</td><td></td>
                 <td>{tot.ab}</td><td>{tot.h}</td><td>{tot.rbi}</td><td>{tot.r}</td><td>{tot.bb}</td><td>{tot.k}</td><td>{tot.sb}</td>
                 <td colSpan={innList.length}></td>
               </tr>
             </tbody>
-          </table>
+          </table></div>
         </>
       )}
 
       {box.pitching.length > 0 && (
         <>
           <h2>投手</h2>
-          <table>
+          <div className="scrollx"><table className="frz1">
             <thead>
               <tr><th className="tl">選手</th><th>投球回</th><th>対打者</th><th>被安打</th><th>奪三振</th><th>与四球</th><th>与死球</th><th>失点</th><th>自責</th><th>防御率</th></tr>
             </thead>
@@ -144,24 +152,24 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </>
       )}
 
       {box.fielding.length > 0 && (
         <>
           <h2>守備</h2>
-          <table>
-            <thead><tr><th>位置</th><th className="tl">選手</th><th>刺殺</th><th>捕殺</th><th>失策</th><th>守備機会</th></tr></thead>
+          <div className="scrollx"><table className="frz1">
+            <thead><tr><th className="tl">選手</th><th>位置</th><th>刺殺</th><th>捕殺</th><th>失策</th><th>守備機会</th></tr></thead>
             <tbody>
               {box.fielding.map((f) => (
                 <tr key={f.player_id}>
-                  <td className="muted">{roleLabel(rowByPlayer.get(f.player_id))}</td>
-                  <td className="tl">{name(f.player_id)}</td><td>{f.po}</td><td>{f.a}</td><td>{f.e}</td><td>{f.tc}</td>
+                  <td className="tl">{name(f.player_id)}</td>
+                  <td className="muted">{roleLabel(rowByPlayer.get(f.player_id))}</td><td>{f.po}</td><td>{f.a}</td><td>{f.e}</td><td>{f.tc}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </>
       )}
 

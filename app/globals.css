@@ -1,10 +1,14 @@
 * { box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; color: #1a1a1a; background: #fafafa; }
-main { max-width: 1150px; margin: 0 auto; padding: 1.25rem 1.5rem 3rem; }
+main { max-width: 1150px; margin: 0 auto; padding: 1.25rem 1.5rem 3rem; zoom: var(--ui-scale, 1); }
+/* 表示サイズ切替(小/中/大) */
+.uiscale { margin-left: auto; display: inline-flex; gap: 4px; }
+.uiscale button { background: transparent; color: #cbd5e1; border: 1px solid #374151; border-radius: 4px; padding: 1px 9px; font-size: 0.85rem; line-height: 1.6; cursor: pointer; }
+.uiscale button.active { background: #e5e7eb; color: #111827; border-color: #e5e7eb; }
 h1 { font-size: 1.4rem; margin: 0.25rem 0 1rem; }
 h2 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
-nav { background: #111827; padding: 0.7rem 1.5rem; }
-nav a { color: #e5e7eb; margin-right: 1.25rem; text-decoration: none; font-size: 0.95rem; }
+nav { background: #111827; padding: 0.7rem 1.5rem; display: flex; align-items: center; flex-wrap: wrap; column-gap: 1.25rem; row-gap: 0.45rem; }
+nav a { color: #e5e7eb; text-decoration: none; font-size: 0.95rem; }
 nav a:hover { color: #fff; text-decoration: underline; }
 a { color: #2563eb; text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -32,10 +36,75 @@ td.grid, th.grid { text-align: center; min-width: 3.2em; font-size: 0.78rem; }
 .hit { color: #dc2626; }
 /* Yu Gothic UI の太字(700)は細いため、最大ウェイト＋faux-bold(影で線を太らせ)で確実に太字に見せる */
 .rbi { font-weight: 900; text-shadow: 0 0 0.5px currentColor; }
+/* グリッドのセルはテキスト速報へのジャンプリンク。色は結果ラベルに合わせる */
+a.gridlink { color: #1a1a1a; text-decoration: none; }
+a.gridlink:hover { text-decoration: underline; }
+a.gridlink.hit { color: #dc2626; }
+
+/* テキスト速報 */
+.pregame { display: flex; gap: 2rem; flex-wrap: wrap; margin: 0.25rem 0 1.5rem; }
+.pregame table { width: auto; }
+.pbp-half { margin: 0 0 1.25rem; }
+h2.ih { font-size: 1rem; margin: 1.5rem 0 0.5rem; padding-bottom: 0.25rem; border-bottom: 2px solid #111827; }
+.pbp-pa { padding: 0.45rem 0.25rem; border-bottom: 1px solid #eee; scroll-margin-top: 0.75rem; }
+.pbp-pa:target { background: #fef9c3; border-radius: 4px; }
+.pbp-num { display: inline-block; min-width: 1.8em; color: #9ca3af; }
+.pbp-batter { font-weight: 600; }
+.pbp-sit { color: #6b7280; font-size: 0.85rem; margin-left: 0.5rem; }
+.diamond { vertical-align: middle; margin-left: 0.45rem; position: relative; top: -1px; }
+.pbp-during { margin: 0.15rem 0 0 1.8em; color: #6b7280; font-size: 0.9em; }
+.pbp-play { margin: 0.15rem 0 0 1.8em; }
+.pbp-sum { margin: 0.5rem 0 0; padding: 0.35rem 0.7rem; background: #f3f4f6; border-radius: 4px; font-size: 0.85rem; display: inline-block; }
 
 table.linescore { width: auto; margin-bottom: 1.25rem; }
 .linescore .tm { font-weight: 600; padding-right: 1.5rem; }
 .linescore th, .linescore td { min-width: 1.6em; }
+
+/* 横長表をモバイルで救う: 横スクロール可能なラッパ */
+.scrollx { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.scrollx > table { margin-top: 0; }
+
+@media (max-width: 640px) {
+  nav { padding: 0.6rem 0.8rem; column-gap: 1rem; }
+  main { padding: 1rem 0.8rem 2.5rem; }
+  h1 { font-size: 1.2rem; }
+  h2 { font-size: 1rem; }
+  /* 横スクロール時、左端(選手名/日付)の列を固定して見失わないように */
+  .frz1 th:first-child, .frz1 td:first-child {
+    position: sticky; left: 0; z-index: 1; box-shadow: 1px 0 0 #e5e7eb;
+  }
+  .frz1 td:first-child { background: #fff; }
+  .frz1 th:first-child { background: #f3f4f6; }
+  /* 先発表は縦に積む */
+  .pregame { flex-direction: column; gap: 1rem; }
+}
+
+/* 管理画面 */
+.adminnav { line-height: 2; padding-left: 1.1rem; }
+.adminlist { margin: 0.5rem 0 1rem; }
+.adminrow { display: flex; gap: 0.5rem; align-items: center; margin: 0 0 0.4rem; flex-wrap: wrap; }
+.adminrow .pid { width: 4em; color: #6b7280; font-variant-numeric: tabular-nums; }
+.adminrow input { padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.9rem; }
+.adminrow input.pid { width: 4.5em; }
+.adminrow .iname { flex: 1; min-width: 7em; }
+.adminrow .itype { width: 7em; }
+.adminrow button { padding: 4px 14px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+.adminrow button:hover { background: #1d4ed8; }
+.adminform { margin: 0.5rem 0 1.25rem; }
+.adminform > label { display: block; margin: 0 0 0.55rem; font-size: 0.9rem; }
+.adminform label.chk { display: inline-flex; align-items: center; gap: 0.4rem; }
+.adminform input, .adminform select, .adminform textarea { margin-top: 2px; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.9rem; }
+.adminform > label > input:not([type="checkbox"]), .adminform > label > select { display: block; min-width: 12em; }
+.adminform input[type="number"] { width: 6em; min-width: 0; }
+.adminform input[type="checkbox"] { margin: 0; }
+.adminform textarea { display: block; width: 100%; font-family: ui-monospace, "SFMono-Regular", monospace; }
+.adminform fieldset { border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.4rem 0.8rem 0.6rem; margin: 0.3rem 0 0.6rem; display: flex; flex-wrap: wrap; gap: 0 1.1rem; }
+.adminform fieldset legend { font-size: 0.82rem; color: #6b7280; }
+.adminform button { padding: 6px 16px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 4px; cursor: pointer; font-size: 0.9rem; margin-top: 0.3rem; }
+.adminform button:hover { background: #1d4ed8; }
+.attgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.4rem 1rem; margin-bottom: 0.7rem; }
+.attrow { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.attrow .aname { font-size: 0.9rem; }
 
 .seasonnav { margin: 0.25rem 0 1rem; }
 .seasonnav a { display: inline-block; padding: 3px 12px; margin-right: 6px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff; color: #374151; }

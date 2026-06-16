@@ -79,7 +79,7 @@ const BATTER_OUT = new Set<ResultCode>(["OUT", "SF", "SH"]);
 /** このPAで増えたアウト数（三振+守備アウト+走塁死）。
  * 旧データはフライ/犠飛で fielding.outs を空にし sequence だけ記録するため、
  * out系resultなのに守備outが空なら打者アウト1を補完する。 */
-function outsMade(pa: PlateAppearance): number {
+export function outsMade(pa: PlateAppearance): number {
   const fo = pa.fielding?.outs ?? [];
   let o = fo.length;
   for (const bd of pa.baserunning_during ?? []) {
