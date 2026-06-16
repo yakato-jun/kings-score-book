@@ -39,6 +39,72 @@ export function posLabel(info: LineupInfo | undefined): string {
   return info.starter ? `(${label})` : label;
 }
 
+export type Role = "starter" | "pitcher" | "pinch_hitter" | "pinch_runner" | "sub";
+
+export interface LineupRow {
+  player_id: string;
+  slot: number | null; // 打順(null=DH制の投手など打順なし)
+  slotSeq: number;     // その打順に入ったsnapshot seq(チェーン並び用)
+  positions: string[]; // 就いた守備位置ID(順・重複なし)
+  role: Role;
+}
+
+/**
+ * 表示用の完全ラインアップを打順→交代チェーン順で返す。
+ * - 各打順1-9をスナップショット順の交代チェーンで列挙
+ * - DH制の投手(打順null)は末尾(=最終打者の下)。DH解除で打順に入った投手はその打順の位置(=指名打者の下)
+ * - role: starter/pitcher/pinch_hitter(代打)/pinch_runner(代走)/sub(守備交代)
+ */
+export function displayLineup(
+  snapshots: LineupSnapshot[],
+  pinchRunners: Set<string>
+): LineupRow[] {
+  const sorted = [...snapshots].sort((a, b) => a.seq - b.seq);
+  const start = sorted[0];
+  const startOrder = new Map<string, number | null>(
+    (start?.lineup ?? []).map((r) => [r.player_id, r.order])
+  );
+  const info = new Map<string, LineupRow>();
+  for (const snap of sorted) {
+    for (const r of snap.lineup) {
+      if (!r.player_id) continue;
+      let e = info.get(r.player_id);
+      if (!e) {
+        e = { player_id: r.player_id, slot: r.order, slotSeq: r.order != null ? snap.seq : Infinity, positions: [], role: "sub" };
+        info.set(r.player_id, e);
+      }
+      if (e.slot == null && r.order != null) { e.slot = r.order; e.slotSeq = snap.seq; }
+      if (r.position_id && !e.positions.includes(r.position_id)) e.positions.push(r.position_id);
+    }
+  }
+  for (const e of info.values()) {
+    if (startOrder.has(e.player_id)) {
+      e.role = startOrder.get(e.player_id) == null ? "pitcher" : "starter";
+    } else if (pinchRunners.has(e.player_id)) {
+      e.role = "pinch_runner";
+    } else {
+      e.role = "pinch_hitter";
+    }
+  }
+  return [...info.values()].sort((a, b) => {
+    const sa = a.slot ?? 99, sb = b.slot ?? 99;
+    return sa !== sb ? sa - sb : a.slotSeq - b.slotSeq;
+  });
+}
+
+/** 役割つき位置ラベル。先発()、投手は位置そのまま、代打=打、代走=走 を前置 */
+export function roleLabel(row: LineupRow | undefined): string {
+  if (!row) return "";
+  const pos = row.positions.map((p) => POS_ABBR[p] ?? p).filter(Boolean).join("/");
+  switch (row.role) {
+    case "starter": return `(${pos})`;
+    case "pitcher": return pos || "投";
+    case "pinch_hitter": return pos ? `打/${pos}` : "打";
+    case "pinch_runner": return pos ? `走/${pos}` : "走";
+    default: return pos;
+  }
+}
+
 const HIT_TYPE: Record<string, string> = { G: "ゴロ", F: "飛", L: "直" };
 
 /** 打席結果の短いラベル(イニング別グリッド用)。例: 二ゴロ/中飛/左安/三振/四球。hit=安打, rbi=打点あり */

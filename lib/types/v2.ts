@@ -94,6 +94,7 @@ export interface PlateAppearance {
   intentional?: boolean; // 申告敬遠（暫定フィールド・要正準化）
   runs: RunEvent[];
   fielding?: Fielding | null;
+  pinch_runner?: { type: string; runner_id: string; note?: string | null } | null;
   double_play?: boolean;
   triple_play?: boolean;
   baserunning_during?: BaserunDuring[];

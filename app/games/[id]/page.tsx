@@ -3,7 +3,7 @@ import { loadGame } from "@/lib/db/games";
 import { loadPlayers } from "@/lib/db/players";
 import { aggregateGame, gameLineScore } from "@/lib/agg";
 import { ipStr, era } from "@/lib/agg/types";
-import { lineupInfo, posLabel, paResultLabel } from "@/lib/lineup";
+import { displayLineup, roleLabel, paResultLabel } from "@/lib/lineup";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +17,14 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
   const g = doc.game;
   const r = g.result;
 
-  const info = lineupInfo(doc.lineup_snapshots);
-  const batting = [...box.batting].sort(
-    (a, b) => (info.get(a.player_id)?.slot ?? 99) - (info.get(b.player_id)?.slot ?? 99)
-  );
+  // 完全ラインアップ(打順チェーン+投手+代打/代走の役割)
+  const pinchRunners = new Set<string>();
+  for (const pa of doc.plate_appearances) {
+    if (pa.pinch_runner?.runner_id) pinchRunners.add(pa.pinch_runner.runner_id);
+  }
+  const rows = displayLineup(doc.lineup_snapshots, pinchRunners);
+  const rowByPlayer = new Map(rows.map((r) => [r.player_id, r]));
+  const battingByPlayer = new Map(box.batting.map((b) => [b.player_id, b]));
 
   const ls = gameLineScore(doc);
   const away = g.home_away === "away";
@@ -28,7 +32,7 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
   const botName = away ? g.opponent : "キングス";
   const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
 
-  // イニング別 打席結果グリッド: batter_id → inning → ラベル[]
+  // イニング別 打席結果グリッド
   const batHalf = away ? "top" : "bottom";
   const grid = new Map<string, Map<number, { text: string; hit: boolean; rbi: boolean }[]>>();
   for (const pa of doc.plate_appearances) {
@@ -40,10 +44,11 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
     grid.set(pa.batter_id, bi);
   }
   const innList = Array.from({ length: ls.innings }, (_, i) => i + 1);
-  const tot = batting.reduce(
+  const tot = box.batting.reduce(
     (t, b) => ({ ab: t.ab + b.ab, h: t.h + b.h, rbi: t.rbi + b.rbi, r: t.r + b.r, bb: t.bb + b.bb, k: t.k + b.k, sb: t.sb + b.sb }),
     { ab: 0, h: 0, rbi: 0, r: 0, bb: 0, k: 0, sb: 0 }
   );
+  const hasBatting = box.batting.length > 0;
 
   return (
     <div>
@@ -76,10 +81,10 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
         </table>
       )}
 
-      {batting.length > 0 && (
+      {hasBatting && (
         <>
           <h2>打撃</h2>
-          <p className="muted">() = 先発守備位置 / <span className="hit">安打は赤字</span> / <span className="rbi">打点は太字</span></p>
+          <p className="muted">() = 先発守備位置 / 打=代打 / 走=代走 / <span className="hit">安打は赤</span> / <span className="rbi">打点は太字</span></p>
           <table>
             <thead>
               <tr>
@@ -89,23 +94,35 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
               </tr>
             </thead>
             <tbody>
-              {batting.map((b) => (
-                <tr key={b.player_id}>
-                  <td className="muted">{posLabel(info.get(b.player_id))}</td>
-                  <td className="tl">{name(b.player_id)}</td>
-                  <td>{b.ab}</td><td>{b.h}</td><td>{b.rbi}</td><td>{b.r}</td><td>{b.bb}</td><td>{b.k}</td><td>{b.sb}</td>
-                  {innList.map((i) => {
-                    const cell = grid.get(b.player_id)?.get(i) ?? [];
-                    return (
-                      <td key={i} className="grid">
-                        {cell.map((l, j) => (
-                          <span key={j} className={[l.hit ? "hit" : "", l.rbi ? "rbi" : ""].filter(Boolean).join(" ")}>{j > 0 ? " " : ""}{l.text}</span>
-                        ))}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {rows.map((row) => {
+                const b = battingByPlayer.get(row.player_id);
+                return (
+                  <tr key={row.player_id}>
+                    <td className="muted">{roleLabel(row)}</td>
+                    <td className="tl">{name(row.player_id)}</td>
+                    {b ? (
+                      <>
+                        <td>{b.ab}</td><td>{b.h}</td><td>{b.rbi}</td><td>{b.r}</td><td>{b.bb}</td><td>{b.k}</td><td>{b.sb}</td>
+                        {innList.map((i) => {
+                          const cell = grid.get(row.player_id)?.get(i) ?? [];
+                          return (
+                            <td key={i} className="grid">
+                              {cell.map((l, j) => (
+                                <span key={j} className={[l.hit ? "hit" : "", l.rbi ? "rbi" : ""].filter(Boolean).join(" ")}>{j > 0 ? " " : ""}{l.text}</span>
+                              ))}
+                            </td>
+                          );
+                        })}
+                      </>
+                    ) : (
+                      <>
+                        {Array.from({ length: 7 }, (_, i) => <td key={i}></td>)}
+                        {innList.map((i) => <td key={i} className="grid"></td>)}
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
               <tr>
                 <td></td><td className="tl">合計</td>
                 <td>{tot.ab}</td><td>{tot.h}</td><td>{tot.rbi}</td><td>{tot.r}</td><td>{tot.bb}</td><td>{tot.k}</td><td>{tot.sb}</td>
@@ -143,7 +160,7 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
             <tbody>
               {box.fielding.map((f) => (
                 <tr key={f.player_id}>
-                  <td className="muted">{posLabel(info.get(f.player_id))}</td>
+                  <td className="muted">{roleLabel(rowByPlayer.get(f.player_id))}</td>
                   <td className="tl">{name(f.player_id)}</td><td>{f.po}</td><td>{f.a}</td><td>{f.e}</td><td>{f.tc}</td>
                 </tr>
               ))}
@@ -152,7 +169,7 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
         </>
       )}
 
-      {batting.length === 0 && (
+      {!hasBatting && (
         <p className="muted">この試合はプレー記録がありません（不戦勝など）。</p>
       )}
     </div>
