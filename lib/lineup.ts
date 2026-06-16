@@ -1,5 +1,5 @@
 /** 守備位置の表示・打順解決(lineup_snapshots から)。 */
-import type { LineupSnapshot } from "./types/v2";
+import type { LineupSnapshot, PlateAppearance, Half } from "./types/v2";
 
 export const POS_ABBR: Record<string, string> = {
   "1": "投", "2": "捕", "3": "一", "4": "二", "5": "三",
@@ -57,7 +57,8 @@ export interface LineupRow {
  */
 export function displayLineup(
   snapshots: LineupSnapshot[],
-  pinchRunners: Set<string>
+  pinchRunners: Set<string>,
+  batted: Set<string>
 ): LineupRow[] {
   const sorted = [...snapshots].sort((a, b) => a.seq - b.seq);
   const start = sorted[0];
@@ -82,8 +83,10 @@ export function displayLineup(
       e.role = startOrder.get(e.player_id) == null ? "pitcher" : "starter";
     } else if (pinchRunners.has(e.player_id)) {
       e.role = "pinch_runner";
+    } else if (batted.has(e.player_id)) {
+      e.role = "pinch_hitter"; // 代打(出場後に打席あり)
     } else {
-      e.role = "pinch_hitter";
+      e.role = "sub"; // 守備交代(打席なし)
     }
   }
   return [...info.values()].sort((a, b) => {
@@ -103,6 +106,29 @@ export function roleLabel(row: LineupRow | undefined): string {
     case "pinch_runner": return pos ? `走/${pos}` : "走";
     default: return pos;
   }
+}
+
+export interface GridCell { text: string; hit: boolean; rbi: boolean; }
+
+/**
+ * イニング別打席結果グリッド: batter_id → inning → セル[]。
+ * batter_id と inning でキーするので打順入れ替え(順序)に非依存。
+ * batHalf は自軍が攻撃する half。
+ */
+export function battingGrid(
+  pas: PlateAppearance[],
+  batHalf: Half
+): Map<string, Map<number, GridCell[]>> {
+  const grid = new Map<string, Map<number, GridCell[]>>();
+  for (const pa of pas) {
+    if (pa.half !== batHalf) continue;
+    const lab = paResultLabel(pa);
+    if (!lab.text) continue;
+    const bi = grid.get(pa.batter_id) ?? new Map<number, GridCell[]>();
+    bi.set(pa.inning, [...(bi.get(pa.inning) ?? []), lab]);
+    grid.set(pa.batter_id, bi);
+  }
+  return grid;
 }
 
 const HIT_TYPE: Record<string, string> = { G: "ゴロ", F: "飛", L: "直" };

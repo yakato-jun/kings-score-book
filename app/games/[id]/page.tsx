@@ -3,7 +3,8 @@ import { loadGame } from "@/lib/db/games";
 import { loadPlayers } from "@/lib/db/players";
 import { aggregateGame, gameLineScore } from "@/lib/agg";
 import { ipStr, era } from "@/lib/agg/types";
-import { displayLineup, roleLabel, paResultLabel } from "@/lib/lineup";
+import { displayLineup, roleLabel, battingGrid } from "@/lib/lineup";
+import type { Half } from "@/lib/types/v2";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +23,9 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
   for (const pa of doc.plate_appearances) {
     if (pa.pinch_runner?.runner_id) pinchRunners.add(pa.pinch_runner.runner_id);
   }
-  const rows = displayLineup(doc.lineup_snapshots, pinchRunners);
-  const rowByPlayer = new Map(rows.map((r) => [r.player_id, r]));
   const battingByPlayer = new Map(box.batting.map((b) => [b.player_id, b]));
+  const rows = displayLineup(doc.lineup_snapshots, pinchRunners, new Set(battingByPlayer.keys()));
+  const rowByPlayer = new Map(rows.map((r) => [r.player_id, r]));
 
   const ls = gameLineScore(doc);
   const away = g.home_away === "away";
@@ -32,17 +33,10 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
   const botName = away ? g.opponent : "キングス";
   const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
 
-  // イニング別 打席結果グリッド
-  const batHalf = away ? "top" : "bottom";
-  const grid = new Map<string, Map<number, { text: string; hit: boolean; rbi: boolean }[]>>();
-  for (const pa of doc.plate_appearances) {
-    if (pa.half !== batHalf) continue;
-    const lab = paResultLabel(pa);
-    if (!lab.text) continue;
-    const bi = grid.get(pa.batter_id) ?? new Map<number, { text: string; hit: boolean; rbi: boolean }[]>();
-    bi.set(pa.inning, [...(bi.get(pa.inning) ?? []), lab]);
-    grid.set(pa.batter_id, bi);
-  }
+  // イニング別 打席結果グリッド(batter_id×回でキー=打順入れ替えに非依存)
+  const batHalf: Half = away ? "top" : "bottom";
+  const grid = battingGrid(doc.plate_appearances, batHalf);
+  const ZERO = { ab: 0, h: 0, rbi: 0, r: 0, bb: 0, k: 0, sb: 0 };
   const innList = Array.from({ length: ls.innings }, (_, i) => i + 1);
   const tot = box.batting.reduce(
     (t, b) => ({ ab: t.ab + b.ab, h: t.h + b.h, rbi: t.rbi + b.rbi, r: t.r + b.r, bb: t.bb + b.bb, k: t.k + b.k, sb: t.sb + b.sb }),
@@ -96,13 +90,15 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
             <tbody>
               {rows.map((row) => {
                 const b = battingByPlayer.get(row.player_id);
+                // 打順に入った投手(DH解除等)は打席ゼロでも0埋め。打順なしの純投手は空欄。
+                const z = b ?? (row.slot != null ? ZERO : null);
                 return (
                   <tr key={row.player_id}>
                     <td className="muted">{roleLabel(row)}</td>
                     <td className="tl">{name(row.player_id)}</td>
-                    {b ? (
+                    {z ? (
                       <>
-                        <td>{b.ab}</td><td>{b.h}</td><td>{b.rbi}</td><td>{b.r}</td><td>{b.bb}</td><td>{b.k}</td><td>{b.sb}</td>
+                        <td>{z.ab}</td><td>{z.h}</td><td>{z.rbi}</td><td>{z.r}</td><td>{z.bb}</td><td>{z.k}</td><td>{z.sb}</td>
                         {innList.map((i) => {
                           const cell = grid.get(row.player_id)?.get(i) ?? [];
                           return (
