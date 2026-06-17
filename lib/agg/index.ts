@@ -46,7 +46,7 @@ function isPA(pa: PlateAppearance): boolean {
 function leqPos(a: [number, number, number], b: [number, number, number]): boolean {
   return a[0] !== b[0] ? a[0] < b[0] : a[1] !== b[1] ? a[1] < b[1] : a[2] <= b[2];
 }
-function effectiveSnapshot(
+export function effectiveSnapshot(
   snaps: LineupSnapshot[],
   inning: number,
   half: Half,
@@ -65,7 +65,7 @@ function effectiveSnapshot(
   return best;
 }
 /** position_id -> player_id */
-function posMap(snap: LineupSnapshot | null): Map<string, string> {
+export function posMap(snap: LineupSnapshot | null): Map<string, string> {
   const m = new Map<string, string>();
   if (!snap) return m;
   for (const r of snap.lineup) {

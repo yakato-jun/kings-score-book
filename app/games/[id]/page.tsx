@@ -43,6 +43,10 @@ export default async function GamePage({ params, searchParams }: { params: Promi
   // イニング別 打席結果グリッド(batter_id×回でキー=打順入れ替えに非依存)
   const batHalf: Half = away ? "top" : "bottom";
   const grid = battingGrid(doc.plate_appearances, batHalf);
+  // 要確認(unclear)が付いた打席のアンカー集合。グリッドで ⚠ を出す。
+  const flaggedAnchors = new Set(
+    doc.plate_appearances.filter((p) => (p.annotations ?? []).some((a) => a.type === "unclear")).map((p) => paAnchor(p.inning, p.half, p.order))
+  );
   const ZERO = { ab: 0, h: 0, rbi: 0, r: 0, bb: 0, k: 0, sb: 0 };
   const innList = Array.from({ length: ls.innings }, (_, i) => i + 1);
   const tot = box.batting.reduce(
@@ -118,9 +122,11 @@ export default async function GamePage({ params, searchParams }: { params: Promi
                           const cell = grid.get(row.player_id)?.get(i) ?? [];
                           return (
                             <td key={i} className="grid">
-                              {cell.map((l, j) => (
-                                <span key={j}>{j > 0 ? " " : ""}<Link href={`/games/${id}/text#${paAnchor(l.inning, l.half, l.order)}`} className={["gridlink", l.hit ? "hit" : "", l.rbi ? "rbi" : ""].filter(Boolean).join(" ")}>{l.text}</Link></span>
-                              ))}
+                              {cell.map((l, j) => {
+                                const anc = paAnchor(l.inning, l.half, l.order);
+                                const flg = flaggedAnchors.has(anc);
+                                return <span key={j}>{j > 0 ? " " : ""}<Link href={`/games/${id}/text#${anc}`} className={["gridlink", l.hit ? "hit" : "", l.rbi ? "rbi" : "", flg ? "flagged" : ""].filter(Boolean).join(" ")}>{l.text}{flg ? "⚠" : ""}</Link></span>;
+                              })}
                             </td>
                           );
                         })}

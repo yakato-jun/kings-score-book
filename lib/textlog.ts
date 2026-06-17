@@ -18,19 +18,19 @@ export function runnersLabel(r: Runners): string {
   return b.join("") + "塁";
 }
 
-/** 打席開始時の状況 例 "無死走者なし" "一死一二塁" */
-export function situationLabel(pa: PlateAppearance): string {
-  return outsLabel(pa.outs) + runnersLabel(pa.runners);
+/** 打席開始時の状況 例 "無死走者なし" "一死一二塁"。outs/runners は導出値を渡す。 */
+export function situationLabel(outs: number, runners: Runners): string {
+  return outsLabel(outs) + runnersLabel(runners);
 }
 
 /**
- * 打席結果の一文。アウトを伴えば累計アウトを付す。
+ * 打席結果の一文。アウトを伴えば累計アウトを付す(startOuts は導出した開始時アウト)。
  * note は表示用の実況に純化済み(システム用注記は pa.annotations[] に分離)。無ければ構造化ラベル。
  */
-export function playLine(pa: PlateAppearance): string {
+export function playLine(pa: PlateAppearance, startOuts: number): string {
   const note = (pa.note ?? "").trim() || paResultLabel(pa).text;
   const made = outsMade(pa);
-  return made > 0 ? `${note} ${pa.outs + made}アウト`.trim() : note;
+  return made > 0 ? `${note} ${startOuts + made}アウト`.trim() : note;
 }
 
 const EVENT_LABEL: Record<string, string> = {
@@ -76,6 +76,15 @@ export function batterLabel(pa: PlateAppearance, nameOf: (id: string) => string)
 
 export function paAnchor(inning: number, half: string, order: number): string {
   return `pa-${inning}-${half}-${order}`;
+}
+
+const ANNO_PREFIX: Record<string, string> = { unclear: "要確認", manual: "補記", other: "メモ" };
+/** システム注記(不明瞭/自動修復の記録)を表示用の行にする。unclear=要修正, repair/manual=補記。 */
+export function annotationLines(pa: PlateAppearance): { kind: "unclear" | "note"; text: string }[] {
+  return (pa.annotations ?? []).map((a) => ({
+    kind: a.type === "unclear" ? "unclear" : "note",
+    text: `${ANNO_PREFIX[a.type] ?? "メモ"}: ${a.detail}`,
+  }));
 }
 
 const HIT = new Set(["H", "H1", "H2", "H3", "HR"]);

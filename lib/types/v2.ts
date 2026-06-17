@@ -108,6 +108,7 @@ export interface PlateAppearance {
 export interface Annotation {
   type: "unclear" | "manual" | "other";
   detail: string;
+  source?: "ai" | "validator" | "manual" | "repair"; // validator=再検査で置換される / repair=自動修復の記録(永続)
 }
 
 export interface LineupEntry {

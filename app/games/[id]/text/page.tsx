@@ -2,10 +2,11 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { loadGame, loadWorking } from "@/lib/db/games";
 import { loadPlayers } from "@/lib/db/players";
-import { halfInnings, situationLabel, playLine, batterLabel, paAnchor, duringLines } from "@/lib/textlog";
+import { halfInnings, situationLabel, playLine, batterLabel, paAnchor, duringLines, annotationLines } from "@/lib/textlog";
 import { POS_ABBR } from "@/lib/lineup";
 import { BaseDiamond } from "@/components/BaseDiamond";
 import { playerName } from "@/lib/names";
+import { derivePAStates } from "@/lib/ops/gamestate";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export default async function GameTextPage({ params, searchParams }: { params: P
   const oppStart = [...oppNames.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
   const halves = halfInnings(doc);
+  const states = derivePAStates(doc); // 開始時アウト/走者/order を結果から導出(保存値を使わない)
 
   return (
     <div>
@@ -94,26 +96,36 @@ export default async function GameTextPage({ params, searchParams }: { params: P
             <h2 className="ih">
               {h.inning}回{h.half === "top" ? "表" : "裏"}　{offense}の攻撃
             </h2>
-            {h.pas.map((pa) => (
-              <div className="pbp-pa" id={paAnchor(pa.inning, pa.half, pa.order)} key={pa.order}>
-                <div>
-                  <span className="pbp-num">{pa.order}：</span>
-                  <span className="pbp-batter">{batterLabel(pa, nameOf)}</span>
-                  <span className="pbp-sit">{situationLabel(pa)}</span>
-                  <BaseDiamond
-                    first={!!pa.runners.first}
-                    second={!!pa.runners.second}
-                    third={!!pa.runners.third}
-                    outs={pa.outs}
-                    label={situationLabel(pa)}
-                  />
+            {h.pas.map((pa) => {
+              const st = states.get(pa) ?? { outs: pa.outs, runners: pa.runners, order: pa.order };
+              const sit = situationLabel(st.outs, st.runners);
+              return (
+                <div className="pbp-pa" id={paAnchor(pa.inning, pa.half, st.order)} key={st.order}>
+                  <div>
+                    <span className="pbp-num">{st.order}：</span>
+                    <span className="pbp-batter">{batterLabel(pa, nameOf)}</span>
+                    <span className="pbp-sit">{sit}</span>
+                    <BaseDiamond
+                      first={!!st.runners.first}
+                      second={!!st.runners.second}
+                      third={!!st.runners.third}
+                      outs={st.outs}
+                      label={sit}
+                    />
+                    {preview && (
+                      <Link className="pbp-edit" href={`/admin/games/${id}/note?edit=${pa.inning}-${pa.half}-${st.order}`}>修正</Link>
+                    )}
+                  </div>
+                  {duringLines(pa, nameOf).map((d, k) => (
+                    <div className="pbp-during" key={k}>{d}</div>
+                  ))}
+                  <div className="pbp-play">{playLine(pa, st.outs)}</div>
+                  {annotationLines(pa).map((a, k) => (
+                    <div className={`pbp-anno ${a.kind}`} key={k}>※ {a.text}</div>
+                  ))}
                 </div>
-                {duringLines(pa, nameOf).map((d, k) => (
-                  <div className="pbp-during" key={k}>{d}</div>
-                ))}
-                <div className="pbp-play">{playLine(pa)}</div>
-              </div>
-            ))}
+              );
+            })}
             <p className="pbp-sum">
               得点 {h.runs}　安打 {h.hits}　四死球 {h.walks}
             </p>

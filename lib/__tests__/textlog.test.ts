@@ -25,24 +25,24 @@ describe("状況ラベル", () => {
     expect(runnersLabel({ first: "x", second: null, third: "z" })).toBe("一三塁");
     expect(runnersLabel({ first: "x", second: "y", third: "z" })).toBe("満塁");
   });
-  it("状況=アウト+走者", () => {
-    expect(situationLabel(pa({ outs: 1, runners: { first: "x", second: "y", third: null } }))).toBe("一死一二塁");
+  it("状況=アウト+走者(導出値を渡す)", () => {
+    expect(situationLabel(1, { first: "x", second: "y", third: null })).toBe("一死一二塁");
   });
 });
 
 describe("打席結果の一文", () => {
   it("note優先・アウトを伴えば累計アウトを付す", () => {
-    expect(playLine(pa({ outs: 1, result: "K", note: "空振り三振" }))).toBe("空振り三振 2アウト");
+    expect(playLine(pa({ result: "K", note: "空振り三振" }), 1)).toBe("空振り三振 2アウト");
   });
   it("出塁(アウトなし)はアウト表記なし", () => {
-    expect(playLine(pa({ outs: 0, result: "H1", note: "ライト前ヒット", fielding: { hit_to: "9", sequence: ["9"], outs: [], errors: [] } }))).toBe("ライト前ヒット");
+    expect(playLine(pa({ result: "H1", note: "ライト前ヒット", fielding: { hit_to: "9", sequence: ["9"], outs: [], errors: [] } }), 0)).toBe("ライト前ヒット");
   });
   it("note無しは構造化ラベルにフォールバック", () => {
-    expect(playLine(pa({ outs: 0, result: "K" }))).toBe("三振 1アウト");
+    expect(playLine(pa({ result: "K" }), 0)).toBe("三振 1アウト");
   });
   it("noteは表示用に純化済み(annotationsは表示に出さない)", () => {
-    const p = pa({ outs: 0, result: "H1", note: "センター前ヒットで2人生還", annotations: [{ type: "manual", detail: "エラーによる得点のため打点なし" }] });
-    expect(playLine(p)).toBe("センター前ヒットで2人生還");
+    const p = pa({ result: "H1", note: "センター前ヒットで2人生還", annotations: [{ type: "manual", detail: "エラーによる得点のため打点なし" }] });
+    expect(playLine(p, 0)).toBe("センター前ヒットで2人生還");
   });
 });
 

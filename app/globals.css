@@ -54,6 +54,11 @@ h2.ih { font-size: 1rem; margin: 1.5rem 0 0.5rem; padding-bottom: 0.25rem; borde
 .diamond { vertical-align: middle; margin-left: 0.45rem; position: relative; top: -1px; }
 .pbp-during { margin: 0.15rem 0 0 1.8em; color: #6b7280; font-size: 0.9em; }
 .pbp-play { margin: 0.15rem 0 0 1.8em; }
+.pbp-anno { margin: 0.1rem 0 0 1.8em; font-size: 0.82rem; }
+.pbp-anno.unclear { color: #b45309; }
+.pbp-anno.note { color: #6b7280; }
+/* グリッドで要確認(unclear)が付いた打席 */
+a.gridlink.flagged { color: #b45309; }
 .pbp-sum { margin: 0.5rem 0 0; padding: 0.35rem 0.7rem; background: #f3f4f6; border-radius: 4px; font-size: 0.85rem; display: inline-block; }
 
 table.linescore { width: auto; margin-bottom: 1.25rem; }
@@ -112,15 +117,37 @@ table.linescore { width: auto; margin-bottom: 1.25rem; }
 .chatmsg .bubble { white-space: pre-wrap; padding: 0.4rem 0.6rem; border-radius: 6px; margin-top: 2px; }
 .chatmsg.user .bubble { background: #eff6ff; }
 .chatmsg.assistant .bubble { background: #f3f4f6; }
+.chatmsg .read { display: block; text-align: right; font-size: 0.7rem; color: #9ca3af; margin-top: 1px; }
 .proposals { margin: 0.5rem 0 1rem; }
 .proposal { border: 1px solid #d1d5db; border-radius: 6px; padding: 0.5rem 0.7rem; margin: 0 0 0.5rem; }
 .proposal pre { background: #f9fafb; border: 1px solid #eee; border-radius: 4px; padding: 0.4rem 0.6rem; overflow-x: auto; font-size: 0.78rem; margin: 0.3rem 0; }
 .proposal button { padding: 4px 12px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 4px; cursor: pointer; font-size: 0.85rem; margin-left: 0.5rem; }
-.chatinput { display: flex; gap: 0.5rem; align-items: flex-start; }
+/* 下書き操作バー(常時表示) */
+.draftbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.4rem 0.6rem; margin: 0 0 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; background: #f8fafc; }
+.draftbar.disabled { color: #9ca3af; background: #f3f4f6; }
+.draftbar .db-label { font-size: 0.85rem; margin-right: auto; }
+.draftbar.disabled .db-label { color: #9ca3af; }
+.draftbar .db-act { font-size: 0.82rem; padding: 3px 10px; border: 1px solid #2563eb; border-radius: 4px; background: #fff; color: #2563eb; cursor: pointer; text-decoration: none; }
+button.db-act:disabled, .draftbar .db-act[aria-disabled="true"] { border-color: #d1d5db; color: #b0b4bb; background: #f3f4f6; cursor: not-allowed; pointer-events: none; }
+
+/* ノート入力 */
+.notearea { width: 100%; box-sizing: border-box; font-size: 0.92rem; line-height: 1.5; padding: 0.6rem; border: 1px solid #d1d5db; border-radius: 6px; resize: vertical; }
+.notebar { display: flex; gap: 0.75rem; align-items: center; margin: 0.5rem 0; }
+.notebar button { padding: 6px 18px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 5px; cursor: pointer; font-size: 0.95rem; }
+.notebar button:disabled { border-color: #9ca3af; background: #9ca3af; cursor: default; }
 .chatinput textarea { flex: 1; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; font-family: inherit; }
 .chatinput button { padding: 6px 16px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
 .proposal details summary { cursor: pointer; font-size: 0.8rem; color: #9ca3af; }
 .previewbar { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.35rem 0.7rem; font-size: 0.85rem; margin: 0 0 0.75rem; display: inline-block; }
+.clarify { white-space: pre-wrap; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.88rem; line-height: 1.5; }
+/* テキスト速報の打席ごと「修正」リンク(preview時) */
+.pbp-edit { margin-left: 0.6rem; font-size: 0.78rem; padding: 1px 8px; border: 1px solid #2563eb; border-radius: 4px; color: #2563eb; text-decoration: none; }
+.pbp-edit:hover { background: #eff6ff; text-decoration: none; }
+/* AI修正パネル */
+.editpanel { border: 1px solid #d1d5db; border-radius: 8px; padding: 0.7rem 0.9rem; margin: 0.5rem 0; background: #fff; }
+.editpanel h2 { margin-top: 0; }
+/* 要確認バッジ(試合管理) */
+.flagbar { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.4rem 0.7rem; font-size: 0.9rem; margin: 0 0 0.75rem; }
 
 .seasonnav { margin: 0.25rem 0 1rem; }
 .seasonnav a { display: inline-block; padding: 3px 12px; margin-right: 6px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff; color: #374151; }

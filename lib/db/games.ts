@@ -84,3 +84,19 @@ export async function commitGameDoc(
   }
   return { gen };
 }
+
+/**
+ * 下書き世代を畳む(publish時のsquash / 下書き破棄)。draft=true の履歴行を削除。
+ * 公開済み版(draft=false)は過去版へのロールバック用に残す。戻り値は削除件数。
+ */
+export async function squashDrafts(gameId: string): Promise<number> {
+  const db = await getDb();
+  const r = await db.collection<GameVersion>(HIST).deleteMany({ game_id: gameId, draft: true });
+  return r.deletedCount ?? 0;
+}
+
+/** 下書き(draft=true の履歴)を持つ試合IDの一覧。未公開の新規試合もここに出る。 */
+export async function draftGameIds(): Promise<string[]> {
+  const db = await getDb();
+  return (await db.collection<GameVersion>(HIST).distinct("game_id", { draft: true })) as string[];
+}

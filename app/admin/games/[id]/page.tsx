@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { loadGame } from "@/lib/db/games";
+import { loadGame, loadWorking } from "@/lib/db/games";
 import { upsertGameMeta, setAttendance } from "@/lib/ops/games";
 import { listPlayers } from "@/lib/ops/players";
 import type { GameResult, AttendanceEntry } from "@/lib/types/v2";
@@ -19,6 +19,9 @@ export default async function GameEdit({ params }: { params: Promise<{ id: strin
   const doc = await loadGame(id);
   if (!doc) notFound();
   const players = await listPlayers();
+  const w = await loadWorking(id);
+  const unclear = (w?.doc.plate_appearances ?? []).filter((p) => (p.annotations ?? []).some((a) => a.type === "unclear")).length;
+  const hasDraft = w?.draft ?? false;
   const g = doc.game;
   const r = g.result;
   const att = new Map(doc.attendance.map((a) => [a.player_id, a.status]));
@@ -67,6 +70,18 @@ export default async function GameEdit({ params }: { params: Promise<{ id: strin
         <Link href="/admin/games">← 試合管理</Link>　/　<Link href={`/games/${id}`}>表示ページ</Link>
       </p>
       <h1>{id} の編集</h1>
+      <p className="rowlinks">
+        <Link className="db-act" href={`/admin/games/${id}/note`}>ノート入力（AI集計）</Link>
+        <Link className="db-act" href={`/games/${id}/text?preview=1`}>テキストスコア</Link>
+        <Link className="db-act" href={`/games/${id}?preview=1`}>ボックス</Link>
+      </p>
+      {(unclear > 0 || hasDraft) && (
+        <p className={unclear > 0 ? "flagbar" : "muted"}>
+          {unclear > 0
+            ? <><b>要確認 {unclear}件</b>あります。<Link href={`/games/${id}/text?preview=1`}>テキストスコア</Link>の「修正」から AI修正で直してください。</>
+            : <>未公開の下書きがあります。<Link href={`/admin/games/${id}/note`}>ノート入力</Link>で確認・確定してください。</>}
+        </p>
+      )}
 
       <h2>メタ情報</h2>
       <form action={saveMeta} className="adminform">
