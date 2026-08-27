@@ -18,6 +18,7 @@ async function main(): Promise<void> {
 
   // 試合
   const dir = resolve(process.cwd(), SRC);
+  // 新IDはランダムhex。この /^G\d{8}\.json$/ は旧日付ファイル名(G20260614.json)前提のシード用フィルタ(挙動は変更なし)。
   const files = (await readdir(dir)).filter((f) => /^G\d{8}\.json$/.test(f));
   const games = db.collection<GameDoc>("games");
   for (const f of files) {
