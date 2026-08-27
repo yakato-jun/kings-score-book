@@ -1,7 +1,8 @@
 import { loadGames } from "@/lib/db/games";
-import { loadPlayers } from "@/lib/db/players";
-import { aggregateSeason } from "@/lib/agg";
+import { loadPlayers, loadPlayerMap } from "@/lib/db/players";
+import { aggregateSeasonP } from "@/lib/agg/participants";
 import { avg, obp, slg, ops, era, fpct } from "@/lib/agg/types";
+import { displayResult } from "@/lib/agg";
 import { SortableTable, type Column } from "@/components/SortableTable";
 import { listSeasons, resolveSeason, seasonOf } from "@/lib/season";
 import { SeasonNav } from "@/components/SeasonNav";
@@ -43,20 +44,28 @@ export default async function SeasonPage({
   const current = resolveSeason(seasons, season);
   const games = all.filter((g) => seasonOf(g.game.date) === current);
   const players = await loadPlayers();
-  const s = aggregateSeason(games);
+  const masterMap = await loadPlayerMap(); // 種別(type)参照用: 新助っ人(roster link→マスタ種別 "guest")を隠す判定に使う
+  const s = aggregateSeasonP(games); // §9: scope/合算キーは participants 解決(roster=マスタIDでクロス試合合算)
   const name = (id: string) => playerName(id, players);
 
-  // 自軍(own)のみ表示。ゲスト(助っ人)は除外。
-  const batRows = s.batting.filter((b) => b.scope === "own").map((b) => ({
+  // 助っ人(ゲスト)を隠す = 正選手のみ表示。判定はマスタ種別 type==="guest" の一本。
+  //   [§12 P5] 移行(P4)完了により現公開版に guest link は無く scope==="guest" は発生しない
+  //     ＝暫定の scope 併用は不要(3表とも一貫)。※過去版プレビュー(?gen=N)の旧guest linkは集計層が scope で
+  //     扱う(歴史版互換・撤去しない)が、このシーズン一覧は公開版のみを読むため種別一本で足りる。
+  const isGuest = (line: { player_id: string }) =>
+    masterMap.get(line.player_id)?.type === "guest";
+
+  const batRows = s.batting.filter((b) => !isGuest(b)).map((b) => ({
     name: name(b.player_id), g: b.g, pa: b.pa, ab: b.ab, h: b.h, b2: b.b2, b3: b.b3, hr: b.hr,
     rbi: b.rbi, r: b.r, bb: b.bb, hbp: b.hbp, k: b.k, sb: b.sb,
     avg: avg(b), obp: obp(b), slg: slg(b), ops: ops(b),
   }));
-  const pitRows = s.pitching.filter((p) => p.scope === "own").map((p) => ({
+  const pitRows = s.pitching.filter((p) => !isGuest(p)).map((p) => ({
     name: name(p.player_id), g: p.g, ip: p.outs, bf: p.bf, h: p.h, hr: p.hr, k: p.k,
-    bb: p.bb, hbp: p.hbp, r: p.r, er: p.er, era: era(p),
+    // [クラスタA] er/防御率 は不明(null)を「—」で表示(0.00 の捏造をしない)。不明混在のシーズン合算も null→「—」。
+    bb: p.bb, hbp: p.hbp, r: p.r, er: p.er ?? "—", era: era(p) ?? "—",
   }));
-  const fldRows = s.fielding.filter((f) => f.scope === "own").map((f) => ({
+  const fldRows = s.fielding.filter((f) => !isGuest(f)).map((f) => ({
     name: name(f.player_id), g: f.g, po: f.po, a: f.a, e: f.e, tc: f.tc, fpct: fpct(f),
   }));
 
@@ -65,12 +74,12 @@ export default async function SeasonPage({
       <h1>{current}年 シーズン成績</h1>
       <SeasonNav seasons={seasons} current={current} basePath="/season" />
       <p className="muted">
-        {games.length} 試合（{games.filter((g) => g.game.result?.outcome === "win").length} 勝）
+        {games.length} 試合（{games.filter((g) => displayResult(g)?.outcome === "win").length} 勝）
         ・各表のヘッダをクリックで並べ替え
       </p>
 
       <h2>打撃</h2>
-      <SortableTable columns={BAT_COLS} rows={batRows} initialKey="pa" storageKey="season-bat" />
+      <SortableTable columns={BAT_COLS} rows={batRows} initialKey="avg" storageKey="season-bat" />
 
       <h2>投手</h2>
       <SortableTable columns={PIT_COLS} rows={pitRows} initialKey="ip" storageKey="season-pit" />

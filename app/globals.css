@@ -1,6 +1,18 @@
 * { box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; color: #1a1a1a; background: #fafafa; }
 main { max-width: 1150px; margin: 0 auto; padding: 1.25rem 1.5rem 3rem; zoom: var(--ui-scale, 1); }
+/* 素の <button>（className無し・かつスタイル付きコンテナの外）の既定＝アプリ標準の青プライマリ。
+   :not([class]) で「クラスを持つボタン」(.db-act, .attpill, .sc-rbtn, .pbp-edit, .cb-, .dlg-, .dn-act など)を
+   すべて除外するので、既存のスタイル済みボタンは一切上書きしない(特に背景無しの .pbp-edit や
+   色無しの .histactions button を潰さない)。コンテナ配下の submit(.adminform button など,(0,1,1))とは
+   詳細度が並ぶため、本ブロックを先頭付近に置き、後方の各コンテナ規則を優先させる。 */
+button:not([class]) { font: inherit; padding: 6px 16px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 5px; cursor: pointer; }
+button:not([class]):hover:not(:disabled) { background: #1d4ed8; }
+button:not([class]):disabled { opacity: 0.55; cursor: not-allowed; }
+/* 素の破棄/危険ボタン用の小クラス(赤 danger)。既存 danger 色 #dc2626 / hover #b91c1c に準拠。 */
+.btn-danger { font: inherit; padding: 6px 16px; border: 1px solid #dc2626; background: #dc2626; color: #fff; border-radius: 5px; cursor: pointer; }
+.btn-danger:hover:not(:disabled) { background: #b91c1c; }
+.btn-danger:disabled { opacity: 0.55; cursor: not-allowed; }
 /* 表示サイズ切替(小/中/大) */
 .uiscale { margin-left: auto; display: inline-flex; gap: 4px; }
 .uiscale button { background: transparent; color: #cbd5e1; border: 1px solid #374151; border-radius: 4px; padding: 1px 9px; font-size: 0.85rem; line-height: 1.6; cursor: pointer; }
@@ -24,6 +36,8 @@ tr:hover td { background: #f9fafb; }
 .l { text-align: left; }
 .tl { text-align: left; }
 td.sc { width: 2.4em; font-weight: 600; }
+/* 打撃表の打順列(左端・box-sizingで幅=列幅) */
+.ord { width: 3.4em; text-align: center; color: #6b7280; font-variant-numeric: tabular-nums; }
 td.dash { text-align: center; color: #9ca3af; width: 1em; padding-left: 2px; padding-right: 2px; }
 .teamL { text-align: right; }
 .teamR { text-align: left; }
@@ -53,7 +67,11 @@ h2.ih { font-size: 1rem; margin: 1.5rem 0 0.5rem; padding-bottom: 0.25rem; borde
 .pbp-sit { color: #6b7280; font-size: 0.85rem; margin-left: 0.5rem; }
 .diamond { vertical-align: middle; margin-left: 0.45rem; position: relative; top: -1px; }
 .pbp-during { margin: 0.15rem 0 0 1.8em; color: #6b7280; font-size: 0.9em; }
+/* 選手交代・守備変更の差し込み行(テキスト速報)。打席と区別が付く控えめな帯 */
+.pbp-change { margin: 0.6rem 0; padding: 0.3rem 0.6rem; font-size: 0.88em; color: #374151; background: #f3f4f6; border-left: 3px solid #9ca3af; border-radius: 4px; }
 .pbp-play { margin: 0.15rem 0 0 1.8em; }
+/* 得点の実況行(生還者+その時点のスコア)。得点の瞬間が流し読みで拾える強調 */
+.pbp-runs { margin: 0.15rem 0 0 1.8em; font-weight: 600; color: #15803d; font-size: 0.9em; }
 .pbp-anno { margin: 0.1rem 0 0 1.8em; font-size: 0.82rem; }
 .pbp-anno.unclear { color: #b45309; }
 .pbp-anno.note { color: #6b7280; }
@@ -65,21 +83,69 @@ table.linescore { width: auto; margin-bottom: 1.25rem; }
 .linescore .tm { font-weight: 600; padding-right: 1.5rem; }
 .linescore th, .linescore td { min-width: 1.6em; }
 
-/* 横長表をモバイルで救う: 横スクロール可能なラッパ */
-.scrollx { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.scrollx > table { margin-top: 0; }
+/* 横長表をモバイルで救う: 横スクロール可能なラッパ。
+   純CSSのスクロールシャドウ(Lea Verou方式)で「まだ右に続く/左に戻れる」を可視化する。背景を4層重ねる:
+   ・地色グラデ2層(#fafafa) … background-attachment:local で中身と一緒に動き、端に達したとき影を覆って消す
+   ・影の放射グラデ2層(黒) … background-attachment:scroll でビューポート左右端に固定
+   結果: 右に余地がある時だけ右端に影、左に戻れる時だけ左端に影が出て、端では消える(JS不使用)。
+   ※背景はラッパ側に描くため、上に載る表を transparent にしないと table{background:#fff} が影を隠す。
+     セルを透過にすると背後のラッパ background-color(#fafafa=ページ地)が透け、
+     narrow な表(.linescore 等)の右脇や表下に白帯が出ない・地色がページと揃う。
+     frz1 の固定初列は不透明背景を持つので左影はその裏に隠れる(=固定列側にはcue不要、意図通り)。 */
+.scrollx {
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  margin: 0 0 1.25rem;
+  background-color: #fafafa;
+  background-image:
+    linear-gradient(to right, #fafafa 30%, rgba(250, 250, 250, 0)),
+    linear-gradient(to left,  #fafafa 30%, rgba(250, 250, 250, 0)),
+    radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0)),
+    radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0));
+  background-position: left center, right center, left center, right center;
+  background-repeat: no-repeat;
+  background-size: 28px 100%, 28px 100%, 14px 100%, 14px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+/* margin はラッパへ移し(上0/下1.25rem=従来通り)、表下マージン分だけラッパが伸びて影が余分に出るのを防ぐ。
+   background は透過にしてラッパのスクロールシャドウを見せる(上記コメント参照)。 */
+.scrollx > table { margin: 0; background: transparent; }
+
+/* 固定列テーブル(.frz1)は separate モデル＝各セルが自分のボーダーを持つ。
+   collapse だとボーダーは表レイヤ所有で、position:sticky の固定セルがボーダーを失い、
+   横スクロール中に固定列の行境界1pxからスクロール中の中身が透ける。separate 化で固定セルと一緒に動かす。 */
+table.frz1 { border-collapse: separate; border-spacing: 0; }
+.frz1 th, .frz1 td { border-width: 0 1px 1px 0; }            /* セルは右+下のみ(隣接セルとの二重線回避) */
+.frz1 { border-top: 1px solid #e5e7eb; border-left: 1px solid #e5e7eb; } /* 外周の上・左は表側で1本引く */
 
 @media (max-width: 640px) {
   nav { padding: 0.6rem 0.8rem; column-gap: 1rem; }
   main { padding: 1rem 0.8rem 2.5rem; }
   h1 { font-size: 1.2rem; }
   h2 { font-size: 1rem; }
-  /* 横スクロール時、左端(選手名/日付)の列を固定して見失わないように */
+  /* 横スクロール時、左端(選手名/日付)の列を固定して見失わないように。
+     1pxの行境界はセル自身の border-right(separate)が担うので、box-shadow は柔らかい奥行き影＝スクロール可の手掛かりに。 */
   .frz1 th:first-child, .frz1 td:first-child {
-    position: sticky; left: 0; z-index: 1; box-shadow: 1px 0 0 #e5e7eb;
+    position: sticky; left: 0; z-index: 1; box-shadow: 2px 0 4px -2px rgba(0,0,0,.12);
   }
   .frz1 td:first-child { background: #fff; }
   .frz1 th:first-child { background: #f3f4f6; }
+  /* 打撃表は打順(1列目)＋選手(2列目)を固定＝横スクロールでも名前を見失わない(.ord幅=3.4em)。
+     2列目の left は 1px 手前(calc(3.4em - 1px))に置き、その1pxを自セルの border-left で塞ぐ。
+     ＝スクロール時のサブピクセル丸めで両固定列の間に隙間が開き背後のデータが透ける問題を、常に1px重ねて防ぐ
+     (box-sizing:border-box なので border-left 追加で列幅は変わらない)。 */
+  .bat-frz td:nth-child(2), .bat-frz th:nth-child(2) { position: sticky; left: calc(3.4em - 1px); border-left: 1px solid #e5e7eb; z-index: 1; box-shadow: 2px 0 4px -2px rgba(0,0,0,.12); }
+  .bat-frz td:nth-child(2) { background: #fff; }
+  .bat-frz th:nth-child(2) { background: #f3f4f6; }
+  /* B2: 試合一覧の区分(大会名)列を畳んで、結果(○●△)まで横スクロール無しで収める(PCでは従来通り表示) */
+  .colleague { display: none; }
+  /* B3: 表示サイズ切替を自分の行へ落とし、主要4リンクを1段目に残す(nav は flex-wrap 済み) */
+  .uiscale { flex-basis: 100%; margin-left: 0; justify-content: flex-end; margin-top: 0.15rem; }
+  /* B4: モバイルで表本体の文字を底上げ(0.82→0.9rem)。global table(:27)より後方＝ここで有効。
+     ※ .sc-num/.fragchip/.draftchip 等「後方で定義されるコンポーネント」の上書きは、この位置だと
+       ソース順で後方の規則に負けて効かない。ファイル末尾の @media にまとめた(下部参照)。 */
+  table { font-size: 0.9rem; }
+  /* B2: 試合一覧はセル左右paddingを詰めて、日付(固定)+対戦+結果(○●△)を横スクロール無しで収める */
+  .gamelist th, .gamelist td { padding-left: 4px; padding-right: 4px; }
   /* 先発表は縦に積む */
   .pregame { flex-direction: column; gap: 1rem; }
 }
@@ -89,12 +155,30 @@ table.linescore { width: auto; margin-bottom: 1.25rem; }
 .adminlist { margin: 0.5rem 0 1rem; }
 .adminrow { display: flex; gap: 0.5rem; align-items: center; margin: 0 0 0.4rem; flex-wrap: wrap; }
 .adminrow .pid { width: 4em; color: #6b7280; font-variant-numeric: tabular-nums; }
-.adminrow input { padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.9rem; }
+.adminrow input, .adminrow select { padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.9rem; }
 .adminrow input.pid { width: 4.5em; }
 .adminrow .iname { flex: 1; min-width: 7em; }
 .adminrow .itype { width: 7em; }
 .adminrow button { padding: 4px 14px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
 .adminrow button:hover { background: #1d4ed8; }
+/* 選手マスタ一覧(§12): 読み取り専用。名前=編集画面へのリンク＋種別バッジ(内部IDは出さない)。 */
+/* 選手一覧＝横に並べて折り返すグリッド(縦一列で横を無駄にしない・24人が数行に収まる)。 */
+.plist { list-style: none; margin: 0.5rem 0 1.25rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 0.4rem; }
+.plist li { margin: 0; }
+.plist a { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 7px 12px; border: 1px solid #e5e7eb; border-radius: 7px; background: #fff; color: inherit; text-decoration: none; }
+.plist .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* モバイルはカード最小幅を詰めて2列に(1列だと縦に長い)。 */
+@media (max-width: 640px) { .plist { grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); } }
+.plist a:hover { background: #f8fafc; border-color: #d1d5db; }
+.pbadge { font-size: 0.72rem; padding: 1px 8px; border-radius: 999px; border: 1px solid #d1d5db; color: #6b7280; }
+.pbadge.regular { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+.pbadge.guest { background: #f3f4f6; }
+/* 名寄せ操作(§12 P3・選手編集画面): 統合先を選んで付け替え。保存(青)と競合しない副次スタイル。 */
+.mergectl { display: inline-flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.mergectl select { padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.9rem; }
+.mergebtn { padding: 6px 16px; border: 1px solid #2563eb; border-radius: 4px; background: #fff; color: #2563eb; cursor: pointer; font-size: 0.9rem; }
+.mergebtn:hover:not(:disabled) { background: #eff6ff; }
+.mergebtn:disabled { color: #9ca3af; border-color: #d1d5db; cursor: default; }
 .adminform { margin: 0.5rem 0 1.25rem; }
 .adminform > label { display: block; margin: 0 0 0.55rem; font-size: 0.9rem; }
 .adminform label.chk { display: inline-flex; align-items: center; gap: 0.4rem; }
@@ -110,6 +194,22 @@ table.linescore { width: auto; margin-bottom: 1.25rem; }
 .attgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.4rem 1rem; margin-bottom: 0.7rem; }
 .attrow { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
 .attrow .aname { font-size: 0.9rem; }
+/* 出欠(公開ボックス §9): 参加者名を折り返し横並びで控えめに一覧(縦一列で長くしない)。 */
+.attlist { list-style: none; margin: 0.3rem 0 1.25rem; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; }
+.attlist li { margin: 0; }
+/* 出欠: 出席/欠席の2グループ(名前クリックで移動) */
+.attcols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 0.3rem 0; }
+.attcol { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.5rem 0.7rem; background: #fff; }
+.attcol h3 { margin: 0 0 0.15rem; font-size: 0.95rem; }
+.attcolhint { margin: 0 0 0.5rem; font-size: 0.78rem; }
+.attpills { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.attpill { padding: 4px 11px; border-radius: 999px; font-size: 0.88rem; cursor: pointer; border: 1px solid #d1d5db; }
+.attpill.present { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+.attpill.present:hover { background: #dbeafe; }
+.attpill.absent { background: #f3f4f6; border-color: #e5e7eb; color: #6b7280; }
+.attpill.absent:hover { background: #e5e7eb; }
+.attpill:disabled { opacity: 0.55; cursor: not-allowed; }
+@media (max-width: 640px) { .attcols { grid-template-columns: 1fr; } }
 /* AIチャット */
 .chatlog { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 0.8rem; min-height: 8rem; margin: 0.5rem 0; }
 .chatmsg { margin: 0 0 0.7rem; }
@@ -130,11 +230,46 @@ table.linescore { width: auto; margin-bottom: 1.25rem; }
 .draftbar .db-act { font-size: 0.82rem; padding: 3px 10px; border: 1px solid #2563eb; border-radius: 4px; background: #fff; color: #2563eb; cursor: pointer; text-decoration: none; }
 button.db-act:disabled, .draftbar .db-act[aria-disabled="true"] { border-color: #d1d5db; color: #b0b4bb; background: #f3f4f6; cursor: not-allowed; pointer-events: none; }
 
+/* 下書きプレビュー時の確定バー(目立つ) — 確定/破棄はこの画面(出来上がり)に集約 */
+.confirmbar { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; padding: 0.6rem 0.8rem; margin: 0 0 0.9rem; border: 1px solid #93c5fd; border-left: 4px solid #2563eb; border-radius: 8px; background: #eff6ff; }
+.confirmbar .cb-label { font-size: 0.9rem; font-weight: 600; color: #1e3a8a; margin-right: auto; }
+.confirmbar .cb-flags { font-size: 0.82rem; color: #92400e; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 999px; padding: 1px 10px; }
+.confirmbar .cb-acts { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.confirmbar .cb-ok { padding: 6px 16px; border: 1px solid #16a34a; background: #16a34a; color: #fff; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
+.confirmbar .cb-ok:hover { background: #15803d; }
+.confirmbar .cb-danger { padding: 6px 14px; border: 1px solid #dc2626; background: #fff; color: #dc2626; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
+.confirmbar .cb-danger:hover { background: #fef2f2; }
+.confirmbar .cb-ok:disabled, .confirmbar .cb-danger:disabled { opacity: 0.55; cursor: default; }
+.confirmbar .cb-back { font-size: 0.85rem; color: #2563eb; text-decoration: none; padding: 6px 4px; }
+.confirmbar .cb-back:hover { text-decoration: underline; }
+.confirmbar .cb-err { flex-basis: 100%; color: #dc2626; font-size: 0.85rem; }
+
+/* AI入力: 未公開の下書きがある通知(確定はプレビューへ誘導) */
+.draftnotice { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; padding: 0.5rem 0.75rem; margin: 0 0 0.6rem; border: 1px solid #fcd34d; border-left: 4px solid #f59e0b; border-radius: 8px; background: #fffbeb; }
+.draftnotice .dn-label { font-size: 0.9rem; font-weight: 600; color: #92400e; margin-right: auto; }
+.draftnotice .dn-act { padding: 5px 14px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; font-size: 0.88rem; cursor: pointer; }
+.draftnotice .dn-act:hover { background: #1d4ed8; }
+
 /* ノート入力 */
 .notearea { width: 100%; box-sizing: border-box; font-size: 0.92rem; line-height: 1.5; padding: 0.6rem; border: 1px solid #d1d5db; border-radius: 6px; resize: vertical; }
 .notebar { display: flex; gap: 0.75rem; align-items: center; margin: 0.5rem 0; }
 .notebar button { padding: 6px 18px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 5px; cursor: pointer; font-size: 0.95rem; }
 .notebar button:disabled { border-color: #9ca3af; background: #9ca3af; cursor: default; }
+/* 音声入力: マイクボタン(スマホでタップしやすい高さ。録音中は赤で状態を明示) */
+.notebar .micbtn { min-height: 40px; }
+.notebar .micbtn.rec { border-color: #dc2626; background: #dc2626; }
+/* 音声入力: 録音中の音量メーター(5本バー)。点灯クラス .on はJSがDOM直接更新で付け外しする(React再レンダー非依存) */
+.vmeter { display: inline-flex; align-items: flex-end; gap: 3px; height: 18px; }
+.vmeter .vm-bar { width: 4px; background: #d1d5db; border-radius: 1px; }
+.vmeter .vm-bar:nth-child(1) { height: 5px; }
+.vmeter .vm-bar:nth-child(2) { height: 8px; }
+.vmeter .vm-bar:nth-child(3) { height: 11px; }
+.vmeter .vm-bar:nth-child(4) { height: 14px; }
+.vmeter .vm-bar:nth-child(5) { height: 17px; }
+.vmeter .vm-bar.on { background: #dc2626; }
+/* 音声入力: 補正一覧(heard→corrected)・エラーの帯。誤補正を人が一目で捕まえるためのレビュー面 */
+.voiceband { display: flex; align-items: center; gap: 0.5rem; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.35rem 0.7rem; font-size: 0.85rem; margin: 0 0 0.6rem; }
+.voiceband .vb-close { margin-left: auto; border: none; background: none; color: #6b7280; font-size: 1rem; line-height: 1; cursor: pointer; padding: 2px 6px; }
 .chatinput textarea { flex: 1; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; font-family: inherit; }
 .chatinput button { padding: 6px 16px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
 .proposal details summary { cursor: pointer; font-size: 0.8rem; color: #9ca3af; }
@@ -148,7 +283,91 @@ button.db-act:disabled, .draftbar .db-act[aria-disabled="true"] { border-color: 
 .editpanel h2 { margin-top: 0; }
 /* 要確認バッジ(試合管理) */
 .flagbar { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.4rem 0.7rem; font-size: 0.9rem; margin: 0 0 0.75rem; }
+/* 試合一覧の「下書き」チップ(未公開の下書きが先端にある試合) */
+.draftchip { display: inline-block; margin-left: 6px; padding: 0 7px; font-size: 0.72rem; line-height: 1.55; border-radius: 999px; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; vertical-align: middle; }
+/* スコア入力(手動)タブ — とりあえずの配置。UXは後で整備 */
+.scoreinput { display: flex; flex-direction: column; gap: 0.8rem; }
+.sc-sit { background: #111827; color: #f3f4f6; padding: 0.5rem 0.8rem; border-radius: 8px; font-size: 0.95rem; }
+.sc-box { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.6rem 0.9rem; background: #fff; }
+.sc-box h2 { margin: 0 0 0.5rem; font-size: 1rem; }
+.sc-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.3rem 0; }
+.sc-row select, .sc-row input { padding: 3px 6px; border: 1px solid #d1d5db; border-radius: 5px; font-size: 0.88rem; }
+.sc-ord { display: inline-block; width: 2.6em; color: #6b7280; font-size: 0.85rem; }
+.sc-results { display: flex; flex-wrap: wrap; gap: 6px; margin: 0.5rem 0; }
+.sc-rbtn { padding: 8px 14px; border: 1px solid #2563eb; background: #eff6ff; color: #1d4ed8; border-radius: 7px; font-size: 0.95rem; cursor: pointer; }
+.sc-rbtn:hover { background: #2563eb; color: #fff; }
+.sc-rbtn:disabled { opacity: 0.5; cursor: default; }
+.sc-log { list-style: none; padding: 0; margin: 0; }
+.sc-log li { padding: 3px 0; border-bottom: 1px solid #f3f4f6; font-size: 0.9rem; }
+.sc-log .db-act { margin-left: 0.5rem; }
+.sc-rbtn.on { background: #2563eb; color: #fff; }
+.sc-edit { margin: 0.4rem 0 0.4rem 1rem; padding: 0.5rem 0.7rem; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fafc; }
+/* Phase D 試合データエディタ */
+.sc-group { padding: 0.3rem 0; }
+.sc-ghd { font-weight: 600; font-size: 0.9rem; color: #374151; background: #f3f4f6; padding: 3px 8px; border-radius: 5px; margin: 0.3rem 0; }
+.sc-logrow { padding: 2px 0; }
+.sc-logline { font-size: 0.9rem; display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.sc-ins { margin: 2px 0 2px 0.5rem; }
+.sc-ins .db-act { font-size: 0.78rem; color: #059669; border-color: #a7f3d0; }
+.sc-prev { font-size: 0.82rem; color: #4b5563; background: #eef2ff; padding: 4px 8px; border-radius: 5px; margin-bottom: 0.4rem; }
+.db-act.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+.sc-fs { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.4rem 0.7rem; margin: 0.4rem 0; }
+.sc-fs > legend { font-size: 0.85rem; font-weight: 600; color: #374151; padding: 0 0.4rem; }
+.sc-fs .sc-rbtn { padding: 4px 9px; font-size: 0.82rem; }
+.sc-sub { margin: 0.3rem 0 0.3rem 0.5rem; }
+.sc-subhd { font-size: 0.82rem; color: #6b7280; display: flex; align-items: center; gap: 0.4rem; }
+.sc-subhd .db-act { padding: 0 8px; }
+.sc-evt { border-left: 3px solid #bfdbfe; padding-left: 0.5rem; margin: 0.4rem 0; }
+.sc-subF { margin-left: 0.5rem; padding: 0.3rem 0.5rem; background: #fff; border: 1px dashed #d1d5db; border-radius: 6px; }
+/* §0/§11 個人成績(断片)の疎入力グリッド */
+.sc-numgrid { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; margin: 0.2rem 0 0.4rem; }
+.sc-num { display: inline-flex; flex-direction: column; font-size: 0.72rem; color: #6b7280; gap: 1px; }
+.sc-num input, .sc-num select { width: 3.2em; padding: 3px 5px; border: 1px solid #d1d5db; border-radius: 5px; font-size: 0.85rem; }
+/* §0/§11 記録断片バッジ / 断片の注記 */
+.fragchip { display: inline-block; margin-left: 6px; padding: 0 7px; font-size: 0.7rem; line-height: 1.5; border-radius: 999px; background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; vertical-align: middle; }
+.fragnote { margin-top: 1.25rem; }
+.fragnote ul { margin: 0.3rem 0; padding-left: 1.2rem; font-size: 0.9rem; }
+/* 編集ハブ/閲覧の共有タブナビ(レイアウトで被せる) */
+/* ※ <nav class="tabnav"> は素の nav{background:#111827} を継承してしまうので明示的にリセット(明るいタブへ) */
+.tabnav { display: flex; gap: 2px; border-bottom: 2px solid #e5e7eb; margin: 0 0 1rem; flex-wrap: wrap; background: transparent; padding: 0; align-items: flex-end; }
+.tabnav a { padding: 6px 15px; font-size: 0.9rem; color: #374151; text-decoration: none; border: 1px solid transparent; border-bottom: none; border-radius: 7px 7px 0 0; margin-bottom: -2px; }
+.tabnav a:hover { background: #f3f4f6; text-decoration: none; color: #111827; }
+.tabnav a.active { background: #fff; border-color: #e5e7eb; border-bottom: 2px solid #fff; color: #111827; font-weight: 600; }
+/* 管理ハブのプレビュー(公開ビュー)切替＝タイトル直下の目立つバー(右上隅に埋もれさせない) */
+.pvbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.2rem 0 1rem; padding: 0.45rem 0.75rem; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; }
+.pvbar-label { font-size: 0.85rem; color: #1e40af; font-weight: 600; margin-right: 0.15rem; }
+.pvbar-btn { padding: 4px 15px; border: 1px solid #2563eb; border-radius: 6px; color: #2563eb; background: #fff; font-size: 0.9rem; }
+.pvbar-btn:hover { background: #2563eb; color: #fff; text-decoration: none; }
+/* 版履歴の操作セル(この版へ戻す/この版を取り消す を縦に積む) */
+.histactions { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.histactions button { font-size: 0.78rem; padding: 2px 10px; white-space: nowrap; }
+/* 版履歴表: 各セルは上寄せ(入力欄が折り返して縦長になっても他列が中央に浮かない) */
+.histtable td, .histtable th { vertical-align: top; }
+/* 入力(正本)列は折り返して表幅の暴走を止める(長い自由文ノートを1行で横に伸ばさない) */
+.histinput { max-width: 22em; min-width: 12em; white-space: pre-wrap; word-break: break-word; }
+/* 共通ダイアログ(confirm/prompt をテーマ統一・ネイティブ全廃) */
+.dlg-overlay { position: fixed; inset: 0; background: rgba(17,24,39,0.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 1rem; }
+.dlg { background: #fff; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); max-width: 460px; width: 100%; padding: 1.1rem 1.25rem 1rem; }
+.dlg-title { font-size: 1.05rem; margin: 0 0 0.5rem; }
+.dlg-body { font-size: 0.9rem; color: #374151; line-height: 1.6; margin: 0 0 0.9rem; white-space: pre-wrap; }
+.dlg-input { width: 100%; padding: 6px 9px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.95rem; font-family: inherit; margin: 0 0 0.9rem; }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.dlg-actions button { padding: 6px 16px; border-radius: 6px; font-size: 0.9rem; cursor: pointer; border: 1px solid #d1d5db; background: #fff; color: #374151; }
+.dlg-cancel:hover { background: #f3f4f6; }
+.dlg-ok { background: #2563eb; border-color: #2563eb; color: #fff; }
+.dlg-ok:hover { background: #1d4ed8; }
+.dlg-ok.danger { background: #dc2626; border-color: #dc2626; }
+.dlg-ok.danger:hover { background: #b91c1c; }
 
 .seasonnav { margin: 0.25rem 0 1rem; }
 .seasonnav a { display: inline-block; padding: 3px 12px; margin-right: 6px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff; color: #374151; }
 .seasonnav a.active { background: #111827; color: #fff; border-color: #111827; }
+
+/* B4(続き): モバイルの極小文字の下限を底上げ。ここ(末尾)に置く理由＝対象コンポーネント
+   (.sc-num/.fragchip/.draftchip)は本ファイル後方で定義されるため、中間の @media では
+   特異性同・ソース順で負けて効かない。末尾に置くことで確実に勝たせる(疎入力の入力欄は縮めず0.9remへ)。 */
+@media (max-width: 640px) {
+  .fragchip, .draftchip { font-size: 0.8rem; }
+  .sc-num { font-size: 0.8rem; }
+  .sc-num input, .sc-num select { font-size: 0.9rem; }
+}

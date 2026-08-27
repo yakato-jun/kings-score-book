@@ -1,50 +1,46 @@
-import Link from "next/link";
 import { loadNote } from "@/lib/db/notes";
-import { loadWorking, loadGame } from "@/lib/db/games";
+import { loadWorking, publicGen } from "@/lib/db/games";
 import { loadPlayers } from "@/lib/db/players";
 import { batterLabel, playLine } from "@/lib/textlog";
 import { derivePAStates } from "@/lib/ops/gamestate";
-import { playerName } from "@/lib/names";
-import NoteClient, { type EditTarget } from "./NoteClient";
+import { docNameResolver } from "@/lib/names";
+import NoteClient from "./NoteClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function NotePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> }) {
   const { id } = await params;
   const editParam = (await searchParams).edit;
-  const [note, w, pub, players] = await Promise.all([loadNote(id), loadWorking(id), loadGame(id), loadPlayers()]);
-  const g = w?.doc.game ?? pub?.game;
-  const label = g ? `${g.date}　${g.opponent}` : id;
+  const [note, w, players, pubGen] = await Promise.all([loadNote(id), loadWorking(id), loadPlayers(), publicGen(id)]);
+  const published = pubGen > 0; // 公開済み(=版履歴に公開版がある)なら、ノート空欄時に安心の一文を出す
 
-  // ?edit=回-表裏-order → 対象打席の現在の記録を編集画面に渡す
-  let editTarget: EditTarget | null = null;
+  // ?edit=回-表裏-order → その打席を指す文言をノートの初期値に種付け(=テキスト遷移編集の起点)。
+  //   変更は1打席に限らない(波及してよい)。種付けは ingestDelta が食う自由文の頭出しに過ぎない。
+  //   「他の編集がある」=下書きがある/編集中ノートが残っているときは種付けせずエラー(破棄してから)。
+  let seedError: string | null = null;
+  let initialNote = note;
   if (editParam && w) {
-    const [iStr, half, oStr] = editParam.split("-");
-    const inning = Number(iStr), order = Number(oStr);
-    if (inning && (half === "top" || half === "bottom") && order) {
-      const target = w.doc.plate_appearances.find((p) => p.inning === inning && p.half === half && p.order === order);
-      if (target) {
-        const addl = new Map((w.doc.additional_players ?? []).map((a) => [a.id, a.name]));
-        const nameOf = (pid: string) => addl.get(pid) ?? playerName(pid, players);
-        const st = derivePAStates(w.doc).get(target);
-        editTarget = {
-          inning, half, order,
-          label: `${inning}回${half === "top" ? "表" : "裏"} ${order}番目`,
-          batter: batterLabel(target, nameOf),
-          play: playLine(target, st?.outs ?? target.outs),
-        };
+    if (w.draft || note.trim() !== "") {
+      seedError = "未確定の集計結果、または編集中のノートがあるため、打席の頭出しはできません。上の「確定（公開）」または「未確定の集計結果を破棄」を実行してから、もう一度お試しください。";
+    } else {
+      const [iStr, half, oStr] = editParam.split("-");
+      const inning = Number(iStr), order = Number(oStr);
+      if (inning && (half === "top" || half === "bottom") && order) {
+        const target = w.doc.plate_appearances.find((p) => p.inning === inning && p.half === half && p.order === order);
+        if (target) {
+          const nameOf = docNameResolver(w.doc, players); // §9: participants が名前の正本
+          const st = derivePAStates(w.doc).get(target);
+          const lbl = `${inning}回${half === "top" ? "表" : "裏"}${order}番目`;
+          initialNote = `${lbl}（${batterLabel(target, nameOf)}・${playLine(target, st?.outs ?? target.outs ?? 0)}）を `;
+        }
       }
     }
   }
 
   return (
     <div>
-      <p className="muted" style={{ margin: "0 0 0.5rem" }}>
-        <Link href={`/admin/games/${id}`}>← 試合管理</Link>　/　<Link href={`/games/${id}/text?preview=1`}>テキストスコア</Link>
-      </p>
-      <h1>ノート入力　<span className="muted">{label}</span></h1>
-      <p className="muted">試合のメモを貼る/書く → <b>AI集計</b>で下書きに反映。曖昧な箇所はテキストスコアの「修正」から<b>AI修正</b>で直します。</p>
-      <NoteClient gameId={id} initialNote={note} editTarget={editTarget} />
+      <p className="muted"><b>自由形式</b>で試合の記録を書く/貼って「AI集計」→ AIが内容を判断して試合結果として保存します。曖昧な情報は後から修正・追加できます。（テキストスコアで打席の「修正」を押すと、その打席を指す文がここに入ります）</p>
+      <NoteClient gameId={id} initialNote={initialNote} seedError={seedError} published={published} />
     </div>
   );
 }

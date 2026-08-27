@@ -1,16 +1,18 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { listGameMeta, importGameDoc, upsertGameMeta } from "@/lib/ops/games";
+import { upsertGameMeta, newGameId } from "@/lib/ops/games";
+import { pendingDraftGameIds, loadGames } from "@/lib/db/games";
+import { displayResult } from "@/lib/agg";
 
 export const dynamic = "force-dynamic";
 
-// 新規試合を作成 → そのままノート入力(AI集計)画面へ。日付から id(G+YYYYMMDD)を作る。
+// 新規試合を作成 → そのままノート入力(AI集計)画面へ。id は不透明な短い16進ランダム(衝突チェック付き)を採番する。
 async function createGame(formData: FormData) {
   "use server";
   const date = String(formData.get("date") ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("日付を入力してください");
-  const id = "G" + date.replace(/-/g, "");
+  const id = await newGameId();
   const ha = String(formData.get("home_away") ?? "");
   await upsertGameMeta({
     id,
@@ -18,24 +20,18 @@ async function createGame(formData: FormData) {
     opponent: String(formData.get("opponent") ?? "").trim() || "未定",
     league: String(formData.get("league") ?? "").trim() || null,
     home_away: ha === "home" || ha === "away" ? ha : null,
-    dh: false,
     result: null,
   });
   revalidatePath("/admin/games");
   redirect(`/admin/games/${id}/note`);
 }
 
-async function importAction(formData: FormData) {
-  "use server";
-  const id = await importGameDoc(String(formData.get("json") ?? ""));
-  revalidatePath("/admin/games");
-  redirect(`/admin/games/${id}`);
-}
-
 const HA: Record<string, string> = { home: "後攻", away: "先攻", "": "—" };
 
 export default async function GamesAdmin() {
-  const games = await listGameMeta();
+  // 結果列は displayResult(記録スコアからの導出／手入力上書き)で出すため、メタだけでなく doc 全体を読む。
+  const [docs, pending] = await Promise.all([loadGames(), pendingDraftGameIds()]);
+  const games = [...docs].sort((a, b) => b.game.date.localeCompare(a.game.date));
 
   return (
     <div>
@@ -57,33 +53,31 @@ export default async function GamesAdmin() {
       </form>
 
       <h2>試合一覧</h2>
-      <p className="muted">Atlas が正本です。各試合の編集画面でメタ情報・出欠・ノート入力（AI集計）へ進めます。</p>
+      <p className="muted">Atlas が正本です。各試合の編集画面で試合情報・出欠・AI入力・スコア入力へ進めます。</p>
       <div className="scrollx">
         <table className="frz1">
           <thead>
             <tr><th className="tl">日付</th><th className="tl">相手</th><th className="tl">区分</th><th>キングス</th><th>結果</th><th></th></tr>
           </thead>
           <tbody>
-            {games.map((g) => (
-              <tr key={g.id}>
-                <td className="tl">{g.date}</td>
-                <td className="tl">{g.opponent}</td>
-                <td className="tl muted">{g.league ?? ""}</td>
-                <td>{HA[g.home_away ?? ""]}</td>
-                <td>{g.result ? `${g.result.our_score} - ${g.result.their_score}` : "—"}</td>
-                <td><Link href={`/admin/games/${g.id}`}>編集</Link>　<Link href={`/admin/games/${g.id}/note`}>ノート入力</Link></td>
-              </tr>
-            ))}
+            {games.map((doc) => {
+              const g = doc.game;
+              const dr = displayResult(doc);
+              return (
+                <tr key={g.id}>
+                  <td className="tl">{g.date}</td>
+                  <td className="tl">{g.opponent}{pending.has(g.id) && <span className="draftchip" title="未確定の集計結果があります（未公開）">未確定</span>}</td>
+                  <td className="tl muted">{g.league ?? ""}</td>
+                  <td>{HA[g.home_away ?? ""]}</td>
+                  <td>{dr ? `${dr.our} - ${dr.their}` : "—"}</td>
+                  <td><Link href={`/admin/games/${g.id}`}>編集</Link></td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
-      <h2>JSON取込（上級者向け / 丸ごと差し替え）</h2>
-      <p className="muted">v2 試合doc を貼り付けて取り込みます（schema_version 2.0・game.id が G20260607 形式）。既存 id は上書き。</p>
-      <form action={importAction} className="adminform">
-        <textarea name="json" rows={10} placeholder='{ "schema_version": "2.0", "game": { ... }, ... }' required />
-        <div><button>取り込む</button></div>
-      </form>
     </div>
   );
 }

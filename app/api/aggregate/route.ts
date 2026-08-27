@@ -1,9 +1,11 @@
-/** AI集計キック: ノートを保存し、集計ジョブ(全文を1コール ingestWholeGame→validate→repair)を起動。即 jobId を返す。 */
+/** AI集計キック: ノートを保存し、集計ジョブ(全文を1コール ingestWholeGame→validate)を起動。即 jobId を返す。 */
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { saveNote, loadNote } from "@/lib/db/notes";
 import { getActiveJob, createJob } from "@/lib/db/jobs";
 import { runAggregationJob } from "@/lib/ai/jobrunner";
+import { currentGen, publicGen } from "@/lib/db/games";
+import { draftBlockMsg } from "@/lib/draft-msg";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,6 +19,10 @@ export async function POST(req: Request) {
     if (typeof text === "string") await saveNote(gameId, text, iso); // 最新を保存してから集計
     const notes = typeof text === "string" ? text : await loadNote(gameId);
     if (!notes.trim()) return NextResponse.json({ error: "ノートが空です" }, { status: 400 });
+
+    // 案A: 集計も「未確定の下書きがあれば弾く」に統一(自動破棄しない)。先に確定/破棄させる(ノートは残る)。
+    const [pub, tip] = await Promise.all([publicGen(gameId), currentGen(gameId)]);
+    if (tip !== pub) return NextResponse.json({ error: draftBlockMsg("集計") }, { status: 409 });
 
     const active = await getActiveJob(gameId, Date.now());
     if (active) return NextResponse.json({ jobId: active.job_id, already: true });

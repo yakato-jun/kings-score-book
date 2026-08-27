@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import { DisplaySize } from "@/components/DisplaySize";
+import { DialogProvider } from "@/components/DialogProvider";
 
 // 保存済みの表示倍率を描画前に適用(チラつき防止)
 const applyScale = `(function(){try{var s=localStorage.getItem('ui-scale');if(s)document.documentElement.style.setProperty('--ui-scale',s);}catch(e){}})()`;
@@ -29,7 +30,7 @@ export default function RootLayout({
           <Link href="/admin">管理</Link>
           <DisplaySize />
         </nav>
-        <main>{children}</main>
+        <main><DialogProvider>{children}</DialogProvider></main>
       </body>
     </html>
   );
