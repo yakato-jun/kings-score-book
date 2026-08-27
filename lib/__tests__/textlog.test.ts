@@ -74,6 +74,10 @@ describe("打席中の走塁イベント", () => {
     const p = pa({ baserunning_during: [{ event: "PO", runners: [{ runner_id: "P010", from: "1", to: "out" }] }] });
     expect(duringLines(p, nameOf)).toEqual(["＜牽制死＞ ダミーDがアウト"]);
   });
+  it("牽制で進塁は牽制悪送球(送球逸れ)＝「牽制」とは出さない", () => {
+    const p = pa({ baserunning_during: [{ event: "PO", runners: [{ runner_id: "P010", from: "1", to: "2" }] }] });
+    expect(duringLines(p, nameOf)).toEqual(["＜牽制悪送球＞ ダミーDが二塁へ"]);
+  });
   it("走塁イベントなしは空", () => {
     expect(duringLines(pa({}), nameOf)).toEqual([]);
   });

@@ -2,6 +2,8 @@
 
 export interface BattingLine {
   player_id: string;
+  // [§12 P5 legacy・撤去しない] own/guest 区分は game_history 過去版の旧guest link集計に必要(現公開版は roster 一本)。
+  //   以下 PitchingLine/FieldingLine/AttendanceLine の scope も同じ理由で残す。
   scope: "own" | "guest";
   g: number;        // 出場(打席のあった)試合数
   pa: number;       // 打席
@@ -33,7 +35,7 @@ export interface PitchingLine {
   bb: number;       // 与四球(申告敬遠含む)
   hbp: number;      // 与死球
   r: number;        // 失点
-  er: number;       // 自責点
+  er: number | null; // 自責点。[クラスタA] null=不明(人未明示 かつ 導出でも決められない＝r>0だが自責判定不能=走者不明得点/純断片)
   wp: number;       // 暴投
 }
 
@@ -50,9 +52,7 @@ export interface FieldingLine {
 export interface AttendanceLine {
   player_id: string;
   scope: "own" | "guest";
-  games: number;    // 参加試合数
-  played: number;   // うち出場
-  bench: number;    // うちベンチ参加
+  games: number;    // 出席試合数(participants在籍=出席)。played/benchの区別は廃止(出場は成績有無から導出)
 }
 
 export interface GameBox {
@@ -98,9 +98,21 @@ export function slg(b: BattingLine): number {
 export function ops(b: BattingLine): number {
   return obp(b) + slg(b);
 }
-/** 防御率（9イニング換算 = 自責*27/アウト数） */
-export function era(p: PitchingLine): number {
-  return p.outs ? (p.er * 27) / p.outs : 0;
+/** 防御率（9イニング換算 = 自責*27/アウト数）。[クラスタA] er=不明(null) または アウト0 は null を返す＝表示側で「—」。 */
+export function era(p: PitchingLine): number | null {
+  if (p.er == null || !p.outs) return null;
+  return (p.er * 27) / p.outs;
+}
+
+/**
+ * [クラスタA] 自責点(er)の最終決定。null=不明。
+ *  - override(doc.pitching.earned_runs 明示)があれば正本＝そのまま(絶対に上書きしない)。
+ *  - 不明な寄与(earned=null の得点 / 断片で r>0 だが er 未記録)が1つでもあれば er=null(不明)。
+ *  - それ以外は確定した自責の合算(known)。r=0 も known=0 で 0(自明clear)。
+ */
+export function resolveEr(known: number, hasUnknown: boolean, override?: number): number | null {
+  if (override !== undefined) return override;
+  return hasUnknown ? null : known;
 }
 /** 守備率 = (刺殺+捕殺)/(刺殺+捕殺+失策) */
 export function fpct(f: FieldingLine): number {

@@ -26,11 +26,14 @@ import type {
   GameBox,
   SeasonBox,
 } from "./types";
+import { resolveEr } from "./types";
 
 const COUNTS_AB = new Set<ResultCode>(["H", "H1", "H2", "H3", "HR", "OUT", "K", "FC", "E"]);
 const IS_HIT = new Set<ResultCode>(["H", "H1", "H2", "H3", "HR"]);
 const NOT_PA = new Set<ResultCode>(["INC", "AUTO_OUT"]); // is_pa=false
 
+// [§12 P5 legacy・撤去しない] game_history 過去版(旧 aggregateGame 経路)の旧guest link読みに必要。
+//   pid が P### 以外=旧助っ人IDを guest 扱いにするフォールバック。現公開版の集計は participants 解決(participants.ts)。
 function scopeOf(pid: string): "own" | "guest" {
   return pid.startsWith("P") ? "own" : "guest";
 }
@@ -81,16 +84,28 @@ const BATTER_OUT = new Set<ResultCode>(["OUT", "SF", "SH"]);
  * out系resultなのに守備outが空なら打者アウト1を補完する。 */
 export function outsMade(pa: PlateAppearance): number {
   const fo = pa.fielding?.outs ?? [];
+  const counted = new Set<string>(); // 既にアウト計上した走者ID(二重計上防止)
   let o = fo.length;
+  for (const f of fo) if (f.runner_id) counted.add(f.runner_id);
   for (const bd of pa.baserunning_during ?? []) {
-    o += (bd.runners ?? []).filter((r) => r.to === "out").length;
+    for (const m of bd.runners ?? []) if (m.to === "out") { o += 1; if (m.runner_id) counted.add(m.runner_id); }
   }
-  // 守備outが未記録のとき打者アウトを補完（三振=捕手刺殺 / フライ等=打者アウト）。
+  // baserunning_after のアウト(打球での進塁中アウト等)も数える。ただしFCの封殺など fielding.outs と
+  // 同じ走者を二重に数えない(走者除去はafterで行うため両方に出る)。idが無く守備outがある場合は重複とみなしスキップ。
+  for (const m of pa.baserunning_after ?? []) {
+    if (m.to !== "out") continue;
+    if (m.runner_id ? counted.has(m.runner_id) : fo.length > 0) continue;
+    o += 1; if (m.runner_id) counted.add(m.runner_id);
+  }
+  // 守備outが未記録のとき打者アウトを補完（三振=捕手刺殺 / フライ等=打者アウト / AUTO_OUT=自動アウト枠）。
   // 振り逃げで送球アウト(fielding.outsあり)のKは二重計上しない。
   if (fo.length === 0) {
     if (pa.result === "K" && !pa.dropped_third_strike) o += 1;
-    else if (BATTER_OUT.has(pa.result)) o += 1;
+    else if (BATTER_OUT.has(pa.result) || pa.result === "AUTO_OUT") o += 1;
   }
+  // 併殺/三重殺フラグ: 守備outの記録が足りなくても最低アウト数を保証(§10.3 保存アウト書き直しの前提)
+  if (pa.double_play && o < 2) o = 2;
+  if (pa.triple_play && o < 3) o = 3;
   return o;
 }
 
@@ -172,6 +187,31 @@ export function gameLineScore(doc: GameDoc): LineScore {
   return { innings, topRuns, bottomRuns, topHits, bottomHits, topErrors, bottomErrors };
 }
 
+export interface DerivedResult { our: number; their: number; outcome: "win" | "loss" | "tie" }
+/** 記録した打席からスコア・勝敗を導出する。打席が無ければ null(＝記録から導けない)。
+ *  our/their は自軍の攻撃 half(away=表/home=裏)の得点合計。得点数はラインスコア(runs.length)の合算。 */
+export function deriveResult(doc: GameDoc): DerivedResult | null {
+  if (doc.plate_appearances.length === 0) return null;
+  const ls = gameLineScore(doc);
+  const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
+  const away = doc.game.home_away === "away";
+  const our = sum(away ? ls.topRuns : ls.bottomRuns);
+  const their = sum(away ? ls.bottomRuns : ls.topRuns);
+  const outcome: "win" | "loss" | "tie" = our > their ? "win" : our < their ? "loss" : "tie";
+  return { our, their, outcome };
+}
+
+export interface DisplayResult { our: number; their: number; outcome: "win" | "loss" | "tie"; decided_by: string | null; manual: boolean }
+/** 表示用の最終結果。手入力(g.result)があればそれを正(manual:true・決着込み)、無ければ記録から導出(manual:false・
+ *  decided_by:null)、どちらも無ければ null。基本は導出・手入力は上書き、という表示方針の一元窓口。 */
+export function displayResult(doc: GameDoc): DisplayResult | null {
+  const r = doc.game.result;
+  if (r) return { our: r.our_score, their: r.their_score, outcome: r.outcome, decided_by: r.decided_by, manual: true };
+  const d = deriveResult(doc);
+  if (d) return { our: d.our, their: d.their, outcome: d.outcome, decided_by: null, manual: false };
+  return null;
+}
+
 export function aggregateGame(doc: GameDoc): GameBox {
   const batting: Accum<BattingLine> = new Map();
   const pitching: Accum<PitchingLine> = new Map();
@@ -183,6 +223,9 @@ export function aggregateGame(doc: GameDoc): GameBox {
   const fieldHalf: Half | null = batHalf === "top" ? "bottom" : batHalf === "bottom" ? "top" : null;
 
   const snaps = doc.lineup_snapshots;
+  // [クラスタA] er(自責)は最終決定を後段へ。投手別に「確定自責の合算」と「不明(null earned)の有無」を別トラッキング。
+  const erKnown = new Map<string, number>();
+  const erUnknown = new Set<string>();
 
   for (const pa of doc.plate_appearances) {
     // ---- 打撃（自軍攻撃 half）----
@@ -202,8 +245,8 @@ export function aggregateGame(doc: GameDoc): GameBox {
       if (pa.result === "SF") b.sf += 1;
       // 打点: この打席の runs[].rbi
       for (const run of pa.runs) if (run.rbi) b.rbi += 1;
-      // 得点: 生還した走者(自軍)へ
-      for (const run of pa.runs) bget(batting, run.runner_id).r += 1;
+      // 得点: 生還した走者(自軍)へ。[§0-C] 得点者不明(runner_id=null)は選手別Rを動かさない(旧集計も防御)
+      for (const run of pa.runs) if (run.runner_id != null) bget(batting, run.runner_id).r += 1;
       // 盗塁: 打席中 SB の走者へ
       for (const bd of pa.baserunning_during ?? []) {
         if (bd.event === "SB") {
@@ -214,9 +257,13 @@ export function aggregateGame(doc: GameDoc): GameBox {
 
     // ---- 投手・守備（自軍守備 half）----
     if (fieldHalf && pa.half === fieldHalf) {
-      // 投手（pitcher_id 単位）
-      if (pa.pitcher_id) {
-        const p = pget(pitching, pa.pitcher_id);
+      // 投手/守備は「その打席時点の有効スナップショット」から再導出する(保存値に依存しない＝後発の守備変更が正しくカスケード)。
+      const snap = effectiveSnapshot(snaps, pa.inning, pa.half, pa.order);
+      const pm = posMap(snap);
+      const facing = pm.get("1") ?? pa.pitcher_id ?? null; // 対戦投手=守備位置1。スナップに居なければ保存値へフォールバック(旧データ保険)
+      // 投手（facing 単位）
+      if (facing) {
+        const p = pget(pitching, facing);
         if (isPA(pa)) p.bf += 1; // 未完了打席(INC: 盗塁死等でチェンジ)は対打者に数えない
         p.outs += outsMade(pa);
         if (IS_HIT.has(pa.result)) p.h += 1;
@@ -228,18 +275,18 @@ export function aggregateGame(doc: GameDoc): GameBox {
           if (bd.event === "WP") p.wp += 1;
         }
       }
-      // 失点/自責は責任投手へ帰属
+      // 失点/自責は責任投手へ帰属(明示の responsible_pitcher_id 優先、無ければ再導出した対戦投手)
       for (const run of pa.runs) {
-        const resp = run.responsible_pitcher_id ?? pa.pitcher_id;
+        const resp = run.responsible_pitcher_id ?? facing;
         if (resp) {
           const p = pget(pitching, resp);
           p.r += 1;
-          if (run.earned) p.er += 1;
+          // [クラスタA] earned===true=確定自責 / earned===null=不明 / earned===false=非自責(何もしない)。
+          if (run.earned === true) erKnown.set(resp, (erKnown.get(resp) ?? 0) + 1);
+          else if (run.earned === null) erUnknown.add(resp);
         }
       }
       // 守備
-      const snap = effectiveSnapshot(snaps, pa.inning, pa.half, pa.order);
-      const pm = posMap(snap);
       const fl = pa.fielding;
       const hasFieldOuts = !!(fl && fl.outs && fl.outs.length);
       // 三振 → 捕手(pos2)に刺殺。ただし送球アウト(fielding.outsあり)の場合は
@@ -271,10 +318,14 @@ export function aggregateGame(doc: GameDoc): GameBox {
     }
   }
 
-  // 自責点は記録値(明示)を正本とする。doc.pitching があれば runs[].earned 集計を上書き。
+  // [クラスタA] er を最終決定(null=不明)。doc.pitching(明示)は次段で上書き＝正本。
+  for (const [pid, p] of pitching) p.er = resolveEr(erKnown.get(pid) ?? 0, erUnknown.has(pid));
+
+  // 自責点は記録値を正本とする。doc.pitching が名指す投手は er を記録値へ(箱に line 無ければ生成＝箱落ち防止)。
+  //   [minor①] earned_runs=null=「人が自責不明と明示」＝er=null(表示「—」)で正本。resolveErの近似を上書きするが人の明示「不明」が勝つのが正。
   for (const rec of doc.pitching ?? []) {
-    const p = pitching.get(rec.pitcher_id);
-    if (p) p.er = rec.earned_runs;
+    const p = pget(pitching, rec.pitcher_id);
+    p.er = rec.earned_runs; // number=確定自責 / null=不明の明示
   }
 
   // tc と g(=1) を確定
@@ -295,7 +346,9 @@ function mergeBatting(into: BattingLine, x: BattingLine) {
 }
 function mergePitching(into: PitchingLine, x: PitchingLine) {
   into.g += x.g; into.outs += x.outs; into.bf += x.bf; into.h += x.h; into.hr += x.hr;
-  into.k += x.k; into.bb += x.bb; into.hbp += x.hbp; into.r += x.r; into.er += x.er; into.wp += x.wp;
+  into.k += x.k; into.bb += x.bb; into.hbp += x.hbp; into.r += x.r; into.wp += x.wp;
+  // [クラスタA] er は null 安全に合算(どちらか不明なら合算も不明)。
+  into.er = into.er == null || x.er == null ? null : into.er + x.er;
 }
 function mergeFielding(into: FieldingLine, x: FieldingLine) {
   into.g += x.g; into.po += x.po; into.a += x.a; into.e += x.e; into.tc += x.tc;
@@ -314,20 +367,19 @@ export function aggregateSeason(docs: GameDoc[]): SeasonBox {
     for (const x of box.fielding) { const t = fget(f, x.player_id); mergeFielding(t, x); }
     for (const a of doc.attendance ?? []) {
       let t = att.get(a.player_id);
-      if (!t) { t = { player_id: a.player_id, scope: a.scope, games: 0, played: 0, bench: 0 }; att.set(a.player_id, t); }
-      t.games += 1;
-      if (a.status === "played") t.played += 1; else t.bench += 1;
+      if (!t) { t = { player_id: a.player_id, scope: a.scope, games: 0 }; att.set(a.player_id, t); }
+      t.games += 1; // 在籍=出席。played/benchの区別は廃止(出場は成績有無から導出)
     }
   }
-  // 試合数(試)は出場数(attendance.played)を正本にする。
-  // 打席や守備機会が無い試合でも出場していれば数える。投手の登板数(g)は登板ベースのまま。
-  const playedBy = new Map([...att.values()].map((a) => [a.player_id, a.played]));
+  // 試合数(試)は出席数(attendance.games)を正本にする。
+  // 打席や守備機会が無い試合でも出席していれば数える。投手の登板数(g)は登板ベースのまま。
+  const attendedBy = new Map([...att.values()].map((a) => [a.player_id, a.games]));
   for (const line of b.values()) {
-    const pl = playedBy.get(line.player_id);
+    const pl = attendedBy.get(line.player_id);
     if (pl !== undefined) line.g = pl;
   }
   for (const line of f.values()) {
-    const pl = playedBy.get(line.player_id);
+    const pl = attendedBy.get(line.player_id);
     if (pl !== undefined) line.g = pl;
   }
 

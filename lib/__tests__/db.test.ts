@@ -8,8 +8,8 @@ import { getDb } from "../db/mongo";
 import { loadGames, loadGame } from "../db/games";
 
 const games: GameDoc[] = [
-  { ...doc({ home_away: "away" }), game: { id: "G1", date: "2026-01-01", opponent: "A", league: null, home_away: "away", dh: false } },
-  { ...doc({ home_away: "home" }), game: { id: "G2", date: "2026-02-01", opponent: "B", league: null, home_away: "home", dh: false } },
+  { ...doc({ home_away: "away" }), game: { id: "G1", date: "2026-01-01", opponent: "A", league: null, home_away: "away" } },
+  { ...doc({ home_away: "home" }), game: { id: "G2", date: "2026-02-01", opponent: "B", league: null, home_away: "home" } },
 ];
 
 beforeEach(() => {

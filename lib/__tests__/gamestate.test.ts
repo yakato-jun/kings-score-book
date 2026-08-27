@@ -21,6 +21,92 @@ describe("resolveBaserunningIds: runner_id 省略時は from塁の走者で確�
   });
 });
 
+describe("走塁記録の契約: null走者の防波堤と from の unknown/batter 正規化", () => {
+  it("冗長な null 走者の after が打者を消さない(H2の打者はサーバ自動配置のまま)", () => {
+    // AIが打者自身の出塁を runner_id無し・from:null で冗長に書くケース。
+    // 修正前は applyMoves が bases["2"]=null を代入し、自動配置済みの打者を盤面から消していた。
+    const p = pa({ batter_id: "P2", result: "H2", baserunning_after: [{ runner_id: null, from: null, to: "2" }] as unknown as BaserunMove[] });
+    expect(foldRunners(EMPTY, p)).toEqual({ first: null, second: "P2", third: null });
+  });
+  it("E出塁の打者が次打席の盗塁(during)で同定される(盤面の連鎖が切れない)", () => {
+    // E出塁=サーバが結果コードから自動配置。AIの冗長 null after 付き=修正前は打者が消え、次打席のSBが同定不能になる回帰ケース
+    const board = foldRunners(EMPTY, pa({ batter_id: "A", result: "E", baserunning_after: [{ runner_id: null, from: null, to: "1" }] as unknown as BaserunMove[] }));
+    expect(board).toEqual({ first: "A", second: null, third: null });
+    const p = pa({ batter_id: "B", result: "OUT", baserunning_during: [{ event: "SB", runners: [{ from: "1", to: "2" }] as BaserunMove[] }] });
+    const r = resolveBaserunningIds(board, p);
+    expect(r.baserunning_during?.[0].runners?.[0].runner_id).toBe("A");
+  });
+  it("from:unknown は不明宣言=null に正規化して保存(解決不能なら捏造せず、実在走者も消さない)", () => {
+    const start = { first: null, second: null, third: "X" };
+    const p = pa({ batter_id: "B", result: "OUT", baserunning_after: [{ from: "unknown", to: "3" }] as BaserunMove[] });
+    const fixed = resolveBaserunningIds(start, p);
+    expect(fixed.baserunning_after[0].from).toBeNull(); // "unknown"→null 正規化
+    expect(fixed.baserunning_after[0].runner_id ?? null).toBeNull(); // 解決不能=null/undefinedのまま(捏造しない)
+    expect(foldRunners(start, fixed)).toEqual(start); // null走者の移動は盤面に適用しない=実在走者Xが残る
+  });
+  it("from:batter は打者IDに解決される(batterRef=結果を超える余分な進塁)", () => {
+    // 二塁打の打者が送球間に三塁まで進むケースを from:"batter" で表す
+    const p = pa({ batter_id: "P2", result: "H2", baserunning_after: [{ from: "batter", to: "3" }] as BaserunMove[] });
+    const fixed = resolveBaserunningIds(EMPTY, p);
+    expect(fixed.baserunning_after[0].runner_id).toBe("P2");
+    expect(fixed.baserunning_after[0].from).toBeNull(); // batter参照は塁でない=from:null に正規化
+    expect(foldRunners(EMPTY, fixed)).toEqual({ first: null, second: null, third: "P2" });
+  });
+});
+
+describe("★物理順(2026-08): 先行走者のafter → 打者の自動配置 → 打者自身のafter", () => {
+  // 打者を先に置くと、打者の到達塁(H2の二塁等)に居る先行走者を上書きで消していた回帰群。
+  // 野球の物理は「先行走者が先に進み、打者走者は後から塁に収まる」＝適用順序をこれに合わせる。
+  it("回帰(試合556b5597be型): 牽制挟殺で二塁へ→打者ツーベース→二塁走者生還(R1誤発火・走者消失の解消)", () => {
+    const start = { first: "A", second: null, third: null };
+    const p = pa({
+      batter_id: "B", result: "H2",
+      baserunning_during: [{ event: "PO", runners: [{ from: "1", to: "2" }] as BaserunMove[] }],
+      baserunning_after: [{ from: "2", to: "home" }] as BaserunMove[],
+    });
+    const fixed = resolveBaserunningIds(start, p);
+    expect(fixed.baserunning_after[0].runner_id).toBe("A"); // 打者Bを誤って掴まない(参照フレームずれの解消)
+    expect(foldRunners(start, fixed)).toEqual({ first: null, second: "B", third: null }); // 終了盤面はBのみ
+    expect(deriveScorers(start, fixed)).toEqual(["A"]); // 生還者0人化しない
+    expect(deriveRuns(start, fixed).map((x) => x.runner_id)).toEqual(["A"]); // 得点1件=A
+  });
+  it("二塁走者+二塁打: 打者の到達塁に居た走者が消えず生還する", () => {
+    const start = { first: null, second: "A", third: null };
+    const p = pa({ batter_id: "B", result: "H2", baserunning_after: [{ runner_id: "A", from: "2", to: "home" }] as BaserunMove[] });
+    expect(deriveScorers(start, p)).toEqual(["A"]);
+    expect(foldRunners(start, p)).toEqual({ first: null, second: "B", third: null });
+  });
+  it("三塁走者+三塁打: 同型(打者の到達塁=三塁が塞がっていても生還が消えない)", () => {
+    const start = { first: null, second: null, third: "A" };
+    const p = pa({ batter_id: "B", result: "H3", baserunning_after: [{ runner_id: "A", from: "3", to: "home" }] as BaserunMove[] });
+    expect(deriveScorers(start, p)).toEqual(["A"]);
+    expect(foldRunners(start, p)).toEqual({ first: null, second: null, third: "B" });
+  });
+  it("実戦例#5型: 一三塁+E(フォース)で三塁走者生還・一塁走者三塁へ(from:1 を打者に誤解決しない)", () => {
+    const start = { first: "A", second: null, third: "C" };
+    const p = pa({ batter_id: "B", result: "E", baserunning_after: [{ from: "3", to: "home" }, { from: "1", to: "3" }] as BaserunMove[] });
+    const fixed = resolveBaserunningIds(start, p);
+    expect(fixed.baserunning_after.map((m) => m.runner_id)).toEqual(["C", "A"]); // 修正前は from:"1" が打者Bに誤解決
+    expect(foldRunners(start, fixed)).toEqual({ first: "B", second: null, third: "A" });
+    expect(deriveScorers(start, fixed)).toEqual(["C"]);
+  });
+  it("打者自身の追加進塁(from:batter)は配置後に適用される(H2→三塁まで)", () => {
+    const p = pa({ batter_id: "B", result: "H2", baserunning_after: [{ from: "batter", to: "3" }] as BaserunMove[] });
+    const fixed = resolveBaserunningIds(EMPTY, p);
+    expect(foldRunners(EMPTY, fixed)).toEqual({ first: null, second: null, third: "B" });
+  });
+  it("走者一掃: 一二塁+二塁打で2人生還・打者が二塁に収まる", () => {
+    const start = { first: "A", second: "C", third: null };
+    const p = pa({
+      batter_id: "B", result: "H2",
+      baserunning_after: [{ runner_id: "C", from: "2", to: "home" }, { runner_id: "A", from: "1", to: "home" }] as BaserunMove[],
+    });
+    expect(deriveScorers(start, p)).toEqual(["C", "A"]);
+    expect(deriveRuns(start, p).map((x) => x.runner_id)).toEqual(["C", "A"]);
+    expect(foldRunners(start, p)).toEqual({ first: null, second: "B", third: null });
+  });
+});
+
 describe("kingsBatHalf / lineupSlots", () => {
   it("away=先攻=top, home=後攻=bottom, 不明=top", () => {
     expect(kingsBatHalf(doc({ home_away: "away" }))).toBe("top");
@@ -89,7 +175,7 @@ describe("deriveScorers: 誰が還ったかをエンジンが導出(得点者の
 describe("deriveRuns: runs[](得点・打点・自責)をエンジンが導出する(AIは出さない)", () => {
   it("安打での生還は rbi=true・cause=hit", () => {
     const r = deriveRuns({ first: null, second: null, third: "C" }, pa({ batter_id: "D", result: "H1", baserunning_after: [{ runner_id: "C", from: "3", to: "home" }] }));
-    expect(r).toEqual([{ runner_id: "C", rbi: true, earned: true, cause: "hit" }]);
+    expect(r).toEqual([{ runner_id: "C", rbi: true, earned: true, cause: "hit", origin: "auto" }]);
   });
   it("本塁打は塁上＋打者が全員 rbi=true・cause=hr", () => {
     const r = deriveRuns({ first: "A", second: null, third: "C" }, pa({ batter_id: "D", result: "HR" }));
@@ -98,18 +184,83 @@ describe("deriveRuns: runs[](得点・打点・自責)をエンジンが導出�
   });
   it("満塁四球の押し出しは rbi=true・cause=walk", () => {
     const r = deriveRuns({ first: "A", second: "B", third: "C" }, pa({ batter_id: "D", result: "BB" }));
-    expect(r).toEqual([{ runner_id: "C", rbi: true, earned: true, cause: "walk" }]);
+    expect(r).toEqual([{ runner_id: "C", rbi: true, earned: true, cause: "walk", origin: "auto" }]);
   });
   it("エラーでの生還は rbi=false・earned=false・cause=error", () => {
     const r = deriveRuns({ first: null, second: null, third: "C" }, pa({ batter_id: "D", result: "E", baserunning_after: [{ runner_id: "C", from: "3", to: "home" }] }));
-    expect(r).toEqual([{ runner_id: "C", rbi: false, earned: false, cause: "error" }]);
+    expect(r).toEqual([{ runner_id: "C", rbi: false, earned: false, cause: "error", origin: "auto" }]);
   });
   it("暴投(during)での生還は rbi=false・cause=wp", () => {
     const r = deriveRuns({ first: null, second: null, third: "C" }, pa({ batter_id: "D", result: "K", baserunning_during: [{ event: "WP", runners: [{ runner_id: "C", from: "3", to: "home" }] }] }));
-    expect(r).toEqual([{ runner_id: "C", rbi: false, earned: true, cause: "wp" }]);
+    expect(r).toEqual([{ runner_id: "C", rbi: false, earned: true, cause: "wp", origin: "auto" }]);
   });
   it("0点なら空", () => {
     expect(deriveRuns({ first: "A", second: null, third: null }, pa({ batter_id: "D", result: "OUT" }))).toEqual([]);
+  });
+  it("[§10.6 非対称onBoard] 明示 to:home は盤面に走者不在でも runs[] に保持する(非破壊fill)", () => {
+    // 三塁に誰も居ない盤面で after で C の生還を明示 → 黙って落とさず1件(fill側=deriveRunsはonBoard撤去)
+    const p = pa({ batter_id: "D", result: "H1", baserunning_after: [{ runner_id: "C", from: "3", to: "home" }] });
+    const empty = { first: null, second: null, third: null };
+    expect(deriveRuns(empty, p).map((x) => x.runner_id)).toEqual(["C"]);
+    // check側 deriveScorers は onBoard 維持=盤面が支える生還のみ → 拾わない。この差を R1 が検出しflagできる。
+    expect(deriveScorers(empty, p)).toEqual([]);
+  });
+  it("[§10.6] during(暴投)の明示 to:home も盤面不在で保持する(非破壊fill)", () => {
+    const p = pa({ batter_id: "D", result: "K", baserunning_during: [{ event: "WP", runners: [{ runner_id: "C", from: "3", to: "home" }] }] });
+    const empty = { first: null, second: null, third: null };
+    expect(deriveRuns(empty, p).map((x) => x.runner_id)).toEqual(["C"]);
+    expect(deriveScorers(empty, p)).toEqual([]);
+  });
+});
+
+describe("[クラスタB1] 四死球でも明示 baserunning_after の生還(to:home)を落とさない", () => {
+  it("四球+送球逸れで走者が生還(after to:home)→ runs[]に立つ・rbi=false・earned=null(自責不明)", () => {
+    // 三塁に走者C(一二塁は空=非強制)。四球で打者Dは一塁へ、Cは送球逸れで生還(afterで明示)。
+    const start = { first: null, second: null, third: "C" };
+    const p = pa({ batter_id: "D", result: "BB", baserunning_after: [{ runner_id: "C", from: "3", to: "home" }] });
+    expect(deriveRuns(start, p)).toEqual([{ runner_id: "C", rbi: false, earned: null, cause: "other", origin: "auto" }]);
+    // 盤面にCが実在するので check側 deriveScorers も拾う=食い違い無し(R1は出ない=過剰タグ回避)
+    expect(deriveScorers(start, p)).toEqual(["C"]);
+    // foldRunners: Cは生還で盤面から消え、打者Dが一塁
+    expect(foldRunners(start, p)).toEqual({ first: "D", second: null, third: null });
+  });
+
+  it("満塁四球の強制押し出し(rbi=true)と after の余分生還(rbi=false/earned=null)が二重計上されず共存", () => {
+    const start = { first: "A", second: "B", third: "C" };
+    // 満塁四球: Cが押し出しで生還(強制)。押し出しで三塁へ来たBが送球逸れで生還(after明示)。
+    const p = pa({ batter_id: "D", result: "BB", baserunning_after: [{ runner_id: "B", from: "3", to: "home" }] });
+    expect(deriveRuns(start, p)).toEqual([
+      { runner_id: "C", rbi: true, earned: true, cause: "walk", origin: "auto" }, // 標準の押し出し得点
+      { runner_id: "B", rbi: false, earned: null, cause: "other", origin: "auto" }, // 非強制の余分生還
+    ]);
+    expect(deriveScorers(start, p)).toEqual(["C", "B"]); // 二重計上なし
+  });
+
+  it("after の走者が既に強制で還った走者と同一なら二重計上しない(dedup)", () => {
+    const start = { first: "A", second: "B", third: "C" };
+    // 満塁四球でCが押し出し生還。afterに冗長にCの生還が書かれても1件のみ。
+    const p = pa({ batter_id: "D", result: "BB", baserunning_after: [{ runner_id: "C", from: "3", to: "home" }] });
+    expect(deriveRuns(start, p).map((x) => x.runner_id)).toEqual(["C"]);
+    expect(deriveScorers(start, p)).toEqual(["C"]);
+  });
+
+  it("盤面矛盾(after to:home の走者が盤面不在)→ deriveRunsは保持(非破壊fill)・deriveScorersは拾わない=R1発火材料", () => {
+    const empty = { first: null, second: null, third: null };
+    const p = pa({ batter_id: "D", result: "BB", baserunning_after: [{ runner_id: "C", from: "3", to: "home" }] });
+    expect(deriveRuns(empty, p).map((x) => x.runner_id)).toEqual(["C"]); // fill=落とさない
+    expect(deriveScorers(empty, p)).toEqual([]); // onBoard維持=拾わない → 非対称で R1 が食い違いを検知
+  });
+
+  it("after の reason があれば cause に反映(earned/rbi は不明側=null/false のまま)", () => {
+    const start = { first: null, second: null, third: "C" };
+    const p = pa({ batter_id: "D", result: "HBP", baserunning_after: [{ runner_id: "C", from: "3", to: "home", reason: "WP" }] });
+    expect(deriveRuns(start, p)).toEqual([{ runner_id: "C", rbi: false, earned: null, cause: "wp", origin: "auto" }]);
+  });
+
+  it("四球で after が空なら従来どおり(満塁押し出しのみ・after ループは無害)", () => {
+    const loaded = { first: "A", second: "B", third: "C" };
+    expect(deriveRuns(loaded, pa({ batter_id: "D", result: "BB" }))).toEqual([{ runner_id: "C", rbi: true, earned: true, cause: "walk", origin: "auto" }]);
+    expect(deriveScorers(loaded, pa({ batter_id: "D", result: "BB" }))).toEqual(["C"]);
   });
 });
 
@@ -195,24 +346,24 @@ describe("deriveNextPA (away=自軍top)", () => {
     expect(d.batting_slot).toBe(1);
     expect(d.batter_id).toBe("P1");
   });
-  it("相手の攻撃(bottom)は O001.. を打順順に自動採番", () => {
+  it("相手の攻撃(bottom)は打順位置(opponent_slot)＋プレースホルダ(oN)を順繰りに", () => {
     const d0 = deriveNextPA(doc({ home_away: "away" }), 1, "bottom");
-    expect([d0.batter_id, d0.batting_slot]).toEqual(["O001", null]);
+    expect([d0.batter_id, d0.batting_slot, d0.opponent_slot]).toEqual(["o1", null, 1]);
     const d1 = deriveNextPA(doc({
       home_away: "away",
-      plate_appearances: [pa({ inning: 1, half: "bottom", order: 1, batter_id: "O001", result: "OUT" })],
+      plate_appearances: [pa({ inning: 1, half: "bottom", order: 1, batter_id: "o1", opponent_slot: 1, result: "OUT" })],
     }), 1, "bottom");
-    expect(d1.batter_id).toBe("O002");
+    expect([d1.batter_id, d1.opponent_slot]).toEqual(["o2", 2]);
   });
 });
 
 describe("deriveNextPA (home=自軍bottom)", () => {
-  it("home: 自軍はbottomで打順、topは相手O番号", () => {
+  it("home: 自軍はbottomで打順、topは相手の打順位置", () => {
     const s = snap(LINEUP, { effective_from: { inning: 1, half: "bottom", before_order: null } });
     const d = deriveNextPA(doc({ home_away: "home", lineup_snapshots: [s] }), 1, "bottom");
-    expect([d.batting_slot, d.batter_id]).toEqual([1, "P1"]);
+    expect([d.batting_slot, d.batter_id, d.opponent_slot]).toEqual([1, "P1", null]);
     const dt = deriveNextPA(doc({ home_away: "home", lineup_snapshots: [s] }), 1, "top");
-    expect(dt.batter_id).toBe("O001");
+    expect([dt.batter_id, dt.opponent_slot]).toEqual(["o1", 1]);
   });
 });
 
@@ -223,26 +374,26 @@ describe("resolvePATarget (側で半イニングを決める・アウトでは�
     return doc({ home_away: "home", lineup_snapshots: [s], plate_appearances: pas });
   };
   const oppOut = (inning: number, order: number, n: number) =>
-    pa({ inning, half: "top", order, batter_id: `O${String(n).padStart(3, "0")}`, result: "OUT" });
+    pa({ inning, half: "top", order, batter_id: `o${n}`, opponent_slot: n, result: "OUT" });
 
-  it("打者がO…なら half未指定でも相手側(top)に解決", () => {
-    expect(resolvePATarget(home([]), { batter_id: "O001" })).toEqual({ inning: 1, half: "top" });
+  it("side=opponent なら half未指定でも相手側(top)に解決(§9: 側は呼び出し側がメンバーシップで判定)", () => {
+    expect(resolvePATarget(home([]), { side: "opponent" })).toEqual({ inning: 1, half: "top" });
   });
-  it("自軍打者は自軍side(bottom)に解決", () => {
-    expect(resolvePATarget(home([]), { batter_id: "P1" })).toEqual({ inning: 1, half: "bottom" });
+  it("side=kings は自軍side(bottom)に解決", () => {
+    expect(resolvePATarget(home([]), { side: "kings" })).toEqual({ inning: 1, half: "bottom" });
   });
   it("同じ側を続けるなら同じ回に積む(3アウトでも自動で切らない＝4アウト目も1回表)", () => {
     const d = home([oppOut(1, 1, 1), oppOut(1, 2, 2), oppOut(1, 3, 3)]);
-    expect(resolvePATarget(d, { half: "top", batter_id: "O004" })).toEqual({ inning: 1, half: "top" });
+    expect(resolvePATarget(d, { half: "top", side: "opponent" })).toEqual({ inning: 1, half: "top" });
     expect(deriveNextPA(d, 1, "top").outs).toBe(3); // 開始時すでに3アウトでも受け入れる
   });
   it("側が替わったら新しい半イニング: 表→裏→表 で 2回表になる", () => {
     const d = home([oppOut(1, 1, 1), pa({ inning: 1, half: "bottom", order: 1, batter_id: "P1", result: "OUT" })]);
-    expect(resolvePATarget(d, { batter_id: "O002" })).toEqual({ inning: 2, half: "top" }); // 相手が再び＝2回表
-    expect(resolvePATarget(d, { batter_id: "P2" })).toEqual({ inning: 1, half: "bottom" }); // 自軍継続＝1回裏
+    expect(resolvePATarget(d, { side: "opponent" })).toEqual({ inning: 2, half: "top" }); // 相手が再び＝2回表
+    expect(resolvePATarget(d, { side: "kings" })).toEqual({ inning: 1, half: "bottom" }); // 自軍継続＝1回裏
   });
   it("明示 inning/half は最優先", () => {
-    expect(resolvePATarget(home([]), { inning: 5, half: "bottom", batter_id: "O001" })).toEqual({ inning: 5, half: "bottom" });
+    expect(resolvePATarget(home([]), { inning: 5, half: "bottom", side: "opponent" })).toEqual({ inning: 5, half: "bottom" });
   });
 });
 

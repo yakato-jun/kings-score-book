@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aggregateGame, aggregateSeason, gameLineScore } from "../agg";
+import { aggregateGame, aggregateSeason, gameLineScore, outsMade, deriveResult, displayResult } from "../agg";
 import type { GameBox } from "../agg/types";
 import { doc, defPA, pa, snap, LINEUP } from "./fixtures";
 
@@ -42,6 +42,31 @@ describe("打撃集計 (away=自軍攻撃top)", () => {
   });
   it("三振", () => {
     expect(bat(box, "P4")!.k).toBe(1);
+  });
+});
+
+describe("[クラスタB3] result:null(結果不明)は打数/凡退/アウトを捏造しない", () => {
+  const box = aggregateGame(
+    doc({
+      home_away: "away",
+      plate_appearances: [
+        pa({ order: 1, batter_id: "P1", result: null }),                   // 結果不明(打席は成立)
+        pa({ order: 2, batter_id: "P2", result: "INC", complete: false }), // 未完了(打席継続中)
+        pa({ order: 3, batter_id: "P3", result: "OUT" }),                  // 凡退(比較用)
+      ],
+    })
+  );
+  it("result:null は打席(PA)は数えるが 打数(ab)・安打(h)・三振(k) を作らない(捏造しない)", () => {
+    const p1 = bat(box, "P1")!;
+    expect([p1.pa, p1.ab, p1.h, p1.k]).toEqual([1, 0, 0, 0]);
+  });
+  it("result:null は out(凡退)/アウトカウントを作らない(OUTは1・nullは0)", () => {
+    expect(outsMade(pa({ result: null }))).toBe(0);
+    expect(outsMade(pa({ result: "OUT" }))).toBe(1);
+  });
+  it("INC(未完了=打席継続中)は PA に数えない=null(結果不明・打席成立)と意味差を保つ", () => {
+    expect(bat(box, "P2")?.pa ?? 0).toBe(0); // INC は is_pa=false
+    expect(bat(box, "P1")!.pa).toBe(1);      // null は打席1
   });
 });
 
@@ -184,15 +209,15 @@ describe("不戦勝・出欠・シーズン集計", () => {
         { player_id: "P1", status: "played", scope: "own" },
         { player_id: "P9", status: "bench", scope: "own" },
       ],
-      game: { id: "GF", date: "2026-04-19", opponent: "X", league: null, home_away: null, dh: false, result: { our_score: 0, their_score: 0, outcome: "win", decided_by: "forfeit" } },
+      game: { id: "GF", date: "2026-04-19", opponent: "X", league: null, home_away: null, result: { our_score: 0, their_score: 0, outcome: "win", decided_by: "forfeit" } },
     });
     const box = aggregateGame(d);
     expect(box.batting.length).toBe(0);
     const season = aggregateSeason([d]);
     const a1 = season.attendance.find((a) => a.player_id === "P1")!;
     const a9 = season.attendance.find((a) => a.player_id === "P9")!;
-    expect([a1.games, a1.played]).toEqual([1, 1]);
-    expect([a9.games, a9.bench]).toEqual([1, 1]);
+    expect(a1.games).toBe(1); // 在籍=出席
+    expect(a9.games).toBe(1);
   });
   it("ラインスコア: 回別得点・安打・失策", () => {
     const d = doc({
@@ -221,7 +246,7 @@ describe("不戦勝・出欠・シーズン集計", () => {
     const season = aggregateSeason([mk(), mk()]);
     expect(season.batting.find((b) => b.player_id === "P1")!.h).toBe(2);
   });
-  it("試合数は出場(attendance.played)ベース: 打席が無い試合も数える", () => {
+  it("試合数は出席(attendance.games)ベース: 打席が無い試合も数える", () => {
     const g1 = doc({
       home_away: "away",
       plate_appearances: [pa({ order: 1, batter_id: "P1", result: "H1" })],
@@ -236,5 +261,66 @@ describe("不戦勝・出欠・シーズン集計", () => {
     const p1 = season.batting.find((b) => b.player_id === "P1")!;
     expect(p1.g).toBe(2); // 打席は1試合でも出場2試合
     expect(p1.h).toBe(1);
+  });
+});
+
+describe("outsMade: baserunning_after の走者アウトも数える(FCの封殺は二重計上しない)", () => {
+  it("打球で進塁中アウト(after to:out・守備out無し)を1アウトとして数える", () => {
+    // 単打で一塁走者が次塁を狙ってアウト。fielding.outs は無し＝従来は数え漏れていたケース。
+    expect(outsMade(pa({ result: "H1", baserunning_after: [{ runner_id: "P1", from: "1", to: "out" }] }))).toBe(1);
+  });
+  it("併殺を result=OUT + after の走者アウトで2アウトと数える", () => {
+    expect(outsMade(pa({ result: "OUT", baserunning_after: [{ runner_id: "P1", from: "1", to: "out" }] }))).toBe(2);
+  });
+  it("FCの封殺(fielding.outs と after の両方に同走者)は二重計上せず1アウト", () => {
+    const p = pa({ result: "FC", fielding: { hit_to: "6", sequence: ["6", "4"], outs: [{ at: "2", type: "force", runner_id: "P1" }], errors: [] }, baserunning_after: [{ runner_id: "P1", from: "1", to: "out" }] });
+    expect(outsMade(p)).toBe(1);
+  });
+  it("通常の三振は1アウト(回帰)", () => {
+    expect(outsMade(pa({ result: "K" }))).toBe(1);
+  });
+});
+
+describe("deriveResult / displayResult: 導出優先・手入力は上書き", () => {
+  // away(先攻)=自軍は表。表2点/裏0点 → 2-0で勝ち。
+  const winDoc = () => doc({
+    home_away: "away",
+    plate_appearances: [
+      pa({ inning: 1, half: "top", batter_id: "P1", result: "H1" }),
+      pa({ inning: 1, half: "top", batter_id: "P2", result: "HR", runs: [
+        { runner_id: "P1", rbi: true, earned: true, cause: "hr" },
+        { runner_id: "P2", rbi: true, earned: true, cause: "hr" },
+      ] }),
+    ],
+  });
+
+  it("deriveResult: 記録スコアから自/相手/勝敗を導出(away)", () => {
+    const d = deriveResult(winDoc());
+    expect(d).toEqual({ our: 2, their: 0, outcome: "win" });
+  });
+  it("deriveResult: home(後攻)は自軍=裏。負け/引分/勝ちを判定", () => {
+    // home: 表(相手)1点・裏(自軍)0点 → 0-1で負け
+    const loss = doc({ home_away: "home", plate_appearances: [
+      pa({ inning: 1, half: "top", batter_id: "O1", result: "HR", runs: [{ runner_id: "O1", rbi: true, earned: true, cause: "hr" }] }),
+    ] });
+    expect(deriveResult(loss)).toEqual({ our: 0, their: 1, outcome: "loss" });
+    // 得点なし同士 → 引分
+    const tie = doc({ home_away: "away", plate_appearances: [pa({ batter_id: "P1", result: "OUT" })] });
+    expect(deriveResult(tie)).toEqual({ our: 0, their: 0, outcome: "tie" });
+  });
+  it("deriveResult: 打席が無ければ null(記録から導けない)", () => {
+    expect(deriveResult(doc({ home_away: "away", plate_appearances: [] }))).toBeNull();
+  });
+
+  it("displayResult: 手入力(g.result)があればそれを正・manual:true・決着込み", () => {
+    const d = winDoc();
+    d.game.result = { our_score: 9, their_score: 1, outcome: "win", decided_by: "called" };
+    expect(displayResult(d)).toEqual({ our: 9, their: 1, outcome: "win", decided_by: "called", manual: true });
+  });
+  it("displayResult: 手入力が無ければ導出・manual:false・decided_by:null", () => {
+    expect(displayResult(winDoc())).toEqual({ our: 2, their: 0, outcome: "win", decided_by: null, manual: false });
+  });
+  it("displayResult: 手入力も打席も無ければ null", () => {
+    expect(displayResult(doc({ home_away: null, plate_appearances: [] }))).toBeNull();
   });
 });

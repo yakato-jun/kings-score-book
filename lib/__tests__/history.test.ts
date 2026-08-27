@@ -9,7 +9,7 @@ import { commitGameDoc, currentGen, loadWorking, GenConflictError } from "../db/
 
 const G = (id: string): GameDoc => ({
   ...doc({ home_away: "away" }),
-  game: { id, date: "2026-01-01", opponent: "X", league: null, home_away: "away", dh: false },
+  game: { id, date: "2026-01-01", opponent: "X", league: null, home_away: "away" },
 });
 
 let history: GameVersion[];
@@ -40,7 +40,7 @@ beforeEach(() => {
 
 describe("commitGameDoc(世代・線形append)", () => {
   it("初回は gen1、history1版(draft:false)、games(最新)に反映", async () => {
-    const r = await commitGameDoc(G("G1"), { source: "ui" });
+    const r = await commitGameDoc(G("G1"), { source: "ui", edit_source: "manual" });
     expect(r.gen).toBe(1);
     expect(history).toHaveLength(1);
     expect(history[0].draft).toBe(false);
@@ -48,17 +48,17 @@ describe("commitGameDoc(世代・線形append)", () => {
   });
 
   it("gen は連番で増える", async () => {
-    await commitGameDoc(G("G1"), { source: "ui" });
-    expect((await commitGameDoc(G("G1"), { source: "ui" })).gen).toBe(2);
+    await commitGameDoc(G("G1"), { source: "ui", edit_source: "manual" });
+    expect((await commitGameDoc(G("G1"), { source: "ui", edit_source: "manual" })).gen).toBe(2);
     expect(history).toHaveLength(2);
   });
 
   it("draft は history に積むが games(最新)を更新しない", async () => {
-    await commitGameDoc(G("G1"), { source: "ui" }); // gen1 publish
+    await commitGameDoc(G("G1"), { source: "ui", edit_source: "manual" }); // gen1 publish
     const published = gamesCol.get("G1");
     await commitGameDoc(
       { ...G("G1"), attendance: [{ player_id: "P1", status: "played", scope: "own" }] },
-      { source: "ai", draft: true } // gen2 draft
+      { source: "ai", draft: true, edit_source: "ai_aggregate" } // gen2 draft
     );
     expect(history).toHaveLength(2);
     expect(history[1].draft).toBe(true);
@@ -68,9 +68,9 @@ describe("commitGameDoc(世代・線形append)", () => {
   });
 
   it("base_gen が先端と違えば GenConflictError(楽観ロック)、一致なら通る", async () => {
-    await commitGameDoc(G("G1"), { source: "ui" }); // tip=1
-    await expect(commitGameDoc(G("G1"), { source: "ui", base_gen: 0 })).rejects.toBeInstanceOf(GenConflictError);
-    expect((await commitGameDoc(G("G1"), { source: "ui", base_gen: 1 })).gen).toBe(2);
+    await commitGameDoc(G("G1"), { source: "ui", edit_source: "manual" }); // tip=1
+    await expect(commitGameDoc(G("G1"), { source: "ui", edit_source: "manual", base_gen: 0 })).rejects.toBeInstanceOf(GenConflictError);
+    expect((await commitGameDoc(G("G1"), { source: "ui", edit_source: "manual", base_gen: 1 })).gen).toBe(2);
   });
 
   it("履歴なしの試合は currentGen=0 / loadWorking は games を gen0 で返す", async () => {

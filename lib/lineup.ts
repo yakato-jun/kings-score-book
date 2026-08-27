@@ -58,7 +58,10 @@ export interface LineupRow {
 export function displayLineup(
   snapshots: LineupSnapshot[],
   pinchRunners: Set<string>,
-  batted: Set<string>
+  batted: Set<string>,
+  // [DH解除対応] 選手→実際に打席に立った枠(batting_slot)。スナップショットに一度も打順が現れない選手
+  // (打順外投手がDH枠を継いだのに交代でなく守備変更で記録された等)を、実打席の枠に積むためのフォールバック。
+  paSlots?: Map<string, number>
 ): LineupRow[] {
   const sorted = [...snapshots].sort((a, b) => a.seq - b.seq);
   const start = sorted[0];
@@ -79,6 +82,12 @@ export function displayLineup(
     }
   }
   for (const e of info.values()) {
+    // スナップショット由来の打順が無い選手は、実打席の枠(batting_slot)へフォールバック。
+    // slotSeq は最大値=その枠の先発・先行交代より後ろに積む(スコアブックの慣行どおり同一枠に積み重ねる)。
+    if (e.slot == null) {
+      const s = paSlots?.get(e.player_id);
+      if (s != null) { e.slot = s; e.slotSeq = Number.MAX_SAFE_INTEGER; }
+    }
     if (startOrder.has(e.player_id)) {
       e.role = startOrder.get(e.player_id) == null ? "pitcher" : "starter";
     } else if (pinchRunners.has(e.player_id)) {

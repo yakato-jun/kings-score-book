@@ -71,7 +71,6 @@ export function doc(
       opponent: "Test",
       league: null,
       home_away: over.home_away,
-      dh: false,
     },
     additional_players: [],
     lineup_snapshots: [snap(LINEUP)],
