@@ -1,0 +1,33 @@
+# イメージへ入れないもの。★秘密・機密は絶対に除外。
+node_modules
+.next
+out
+build
+dist
+.git
+.gitignore
+
+# 秘密 / 機密（イメージに焼き込まない）
+.env
+.env.*
+private
+data/private
+**/*.secret.json
+
+# ビルドに不要
+lib/__tests__
+**/*.test.ts
+vitest.config.*
+scripts
+csv_data
+tmhub_profile
+*.md
+*.log
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+Dockerfile
+.dockerignore
+.gcloudignore
+__pycache__

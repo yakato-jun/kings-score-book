@@ -1,0 +1,27 @@
+# gcloud run deploy --source のアップロード対象から除外(.gitignore でなくこれが使われる)。
+# ★秘密・機密は絶対にアップロードしない(Cloud Build へも渡さない)。
+.git
+.gitignore
+node_modules
+.next
+out
+build
+dist
+
+# 秘密 / 機密（Cloud Build へ渡さない）
+.env
+.env.*
+private
+data/private
+**/*.secret.json
+
+# アップロード不要（ビルドに使わない）
+csv_data
+tmhub_profile
+*.log
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+__pycache__
+*.md
