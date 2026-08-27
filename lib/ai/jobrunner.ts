@@ -1,6 +1,6 @@
 /**
  * 集計キックの実行体。POST /api/aggregate から fire-and-forget で呼ぶ(1キック=1ジョブ)。
- * ノート全文を aggregateNotes(1コール ingestWholeGame→validate→repair)に通すだけ。
+ * ノート全文を aggregateNotes(1コール ingestWholeGame→validate)に通すだけ。
  * ブラウザの status ポーリングがノードを生かす間に進む(別建てキュー不要)。
  */
 import { aggregateNotes } from "./aggregate";

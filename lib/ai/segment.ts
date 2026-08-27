@@ -4,6 +4,7 @@
  * 種別を付けておくと、後段で型別の狭いスキーマにルーティングできる(トークン減・誤り減)。
  */
 import Anthropic from "@anthropic-ai/sdk";
+import { thinkingFor, AI_MODEL } from "./agent";
 
 const client = new Anthropic();
 
@@ -39,12 +40,12 @@ const SYS = [
   "1打席に複数の事象(盗塁→四球、パスボール→四球 等)が含まれても、それは1つの atbat セグメントにまとめる(打者単位)。",
   "回マーカー(例『1回表』)は、続く打席に付随する文脈として、その後の atbat セグメントの text 先頭に残してよい。単独で other に切り出さない。",
   "試合開始のスタメン/打順表は、行ごとに分割せず全体を1つの lineup セグメントにまとめる(後段の全置換登録が1回で済むように)。",
-  "試合途中の守備位置変更(例『守備位置変更 田波 1→5』『ピッチャー→サード』『2->5』)は lineup ではなく defense セグメントにする(スタメン全置換と区別する)。",
+  "試合途中の守備位置変更(例『守備位置変更 山本 1→5』『ピッチャー→サード』『2->5』)は lineup ではなく defense セグメントにする(スタメン全置換と区別する)。",
 ].join("\n");
 
-export async function segment(text: string, model = "claude-sonnet-4-6", maxTokens = 4000): Promise<SegmentResult> {
+export async function segment(text: string, model = AI_MODEL, maxTokens = 4000): Promise<SegmentResult> {
   const res = await client.messages.create({
-    model, max_tokens: maxTokens, thinking: { type: "disabled" },
+    model, max_tokens: maxTokens, thinking: thinkingFor(model),
     ...(/haiku/i.test(model) ? {} : { output_config: { effort: "medium" as const } }),
     system: SYS, tools: [SEG_TOOL], tool_choice: { type: "tool", name: "segment" },
     messages: [{ role: "user", content: text }],
