@@ -1572,13 +1572,14 @@ function regraftAfterReplace(oldDoc: GameDoc, newDoc: GameDoc, masters: Map<stri
  * best-effort＝重複防止は作り込まない(同名の別マスタは許容・後から mergePlayer で名寄せ)。
  * 解決した player_id は masters(メモリ)にも載せ、reducer の存在チェック(masters.has)を通す。
  */
-async function resolveGuestNamesInOps(ops: GameOpInput[], masters: Map<string, string>): Promise<GameOpInput[]> {
+async function resolveGuestNamesInOps(ops: GameOpInput[], masters: Map<string, string>, created?: Set<string>): Promise<GameOpInput[]> {
   const cache = new Map<string, string>(); // 名前→player_id(同一コール内で同名を二度解決しない・基本の名前解決)
   const idFor = async (name: string): Promise<string> => {
     const nm = name.trim();
     const hit = cache.get(nm);
     if (hit) return hit;
     const p = await createGuestPlayer(nm);
+    created?.add(p.id); // このコールで新規作成した助っ人(失敗時の掃除対象=applyOps が参照する)
     cache.set(nm, p.id);
     masters.set(p.id, p.name); // reducer の masters.has(player_id) を通す
     return p.id;
@@ -1662,7 +1663,13 @@ export async function applyOps(gameId: string, ops: GameOpInput[], opts: CommitO
   const w = await loadWorking(gameId);
   const masters = await loadPlayers(); // 人物参照の解決(マスタID→参加者の自動追加)に使う
   // [§12 P1] 助っ人名→種別guestマスタ選手(player_id)へ解決(参加者化の境界)。以降 reducer は player_id 一本。
-  const resolvedOps = await resolveGuestNamesInOps(ops, masters);
+  // [助っ人ライフサイクル・失敗経路] マスタ書込(createGuestPlayer)は版commitと非トランザクション=途中のopが
+  // throw すると版は残らないのに助っ人だけ残り、AI辞書を汚染して次回の集計でID取り違えの温床になる(2026-08-22 実障害:
+  // 失敗集計7回分の孤児)。このコールで作った助っ人を記録し、失敗時は「どこからも参照されていなければ」掃除する
+  // (deleteUnreferencedGuests=全試合+全下書きを走査。手動追加や他試合参照の助っ人は候補外なので消えない)。
+  const createdGuests = new Set<string>();
+  const resolvedOps = await resolveGuestNamesInOps(ops, masters, createdGuests);
+  try {
   let doc: GameDoc | null = w?.doc ?? null;
   const oldDoc: GameDoc | null = opts.replace ? doc : null; // [F-4] 全置換前の旧doc(投手記録・ベンチ参加者の再グラフト用)
   // 全置換(AI集計): メタ(game)だけ残して打席/スナップショット/参加者/投手記録をクリアした状態から積む＝1版で丸ごと差し替え。
@@ -1751,6 +1758,13 @@ export async function applyOps(gameId: string, ops: GameOpInput[], opts: CommitO
   // (??必須: gen=0=履歴前シードがある)。旧実装は常にロード時genで上書きし、呼び出し側指定を握り潰していた。
   await commitGameDoc(doc, co({ ...opts, base_gen: opts.base_gen ?? w?.gen }));
   return summaries;
+  } catch (e) {
+    if (createdGuests.size > 0) {
+      try { await deleteUnreferencedGuests(gameId, createdGuests); }
+      catch (ce) { console.error("applyOps: 失敗時の助っ人掃除に失敗(本処理のエラーを優先して再throw)", ce); }
+    }
+    throw e;
+  }
 }
 
 /** 単発の薄いラッパ(管理UI等から1操作だけ呼ぶ用)。中身は applyOps と同じ原子経路。 */
