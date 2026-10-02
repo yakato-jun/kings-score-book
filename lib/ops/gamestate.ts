@@ -66,7 +66,7 @@ const batterRef = (v?: string | null) => !!v && /^(batter|打者|打者走者|�
  * =二重実装で判定がズレるのを構造で防ぐ。判定: from か runner_id が打者参照、または runner_id が打者ID
  * → 打者自身。それ以外(from:null の不明移動を含む)→ 先行走者。
  */
-export function splitAfterMoves(pa: PlateAppearance): { runnerMoves: BaserunMove[]; batterMoves: BaserunMove[] } {
+function splitAfterMoves(pa: PlateAppearance): { runnerMoves: BaserunMove[]; batterMoves: BaserunMove[] } {
   const runnerMoves: BaserunMove[] = [];
   const batterMoves: BaserunMove[] = [];
   for (const m of pa.baserunning_after ?? []) {
@@ -413,23 +413,13 @@ export function resolveBaserunningIds(start: Runners, pa: PlateAppearance, opts:
   return { ...pa, baserunning_during: during, baserunning_after: after };
 }
 
-/** 指定打席の開始時走者(その half-inning の order 未満を畳む)。編集時の得点者補正に使う。 */
-export function startRunnersBefore(doc: GameDoc, inning: number, half: Half, order: number): Runners {
-  let r: Runners = EMPTY;
-  for (const pa of pasInHalf(doc, inning, half)) {
-    if (pa.order >= order) break;
-    r = foldRunners(r, pa);
-  }
-  return r;
-}
-
 /** 自軍が攻撃する half (away=先攻=top, home=後攻=bottom)。home_away不明は top 扱い。 */
 export function kingsBatHalf(doc: GameDoc): Half {
   return doc.game.home_away === "home" ? "bottom" : "top";
 }
 
 /** 相手が攻撃する half (自軍の逆) */
-export function oppBatHalf(doc: GameDoc): Half {
+function oppBatHalf(doc: GameDoc): Half {
   return kingsBatHalf(doc) === "top" ? "bottom" : "top";
 }
 
@@ -450,7 +440,7 @@ function lastPA(doc: GameDoc): PlateAppearance | null {
   return pas.length ? pas[pas.length - 1] : null;
 }
 
-export interface PATarget { inning: number; half: Half; }
+interface PATarget { inning: number; half: Half; }
 
 /**
  * 追加する打席を「どの half-inning に置くか」を決める(=サーバが構造を所有。ただし形式ルールは課さない)。
@@ -468,7 +458,7 @@ export function resolvePATarget(doc: GameDoc, opts: { inning?: number; half?: Ha
   return { inning: maxForHalf + 1, half }; // 側が替わった＝その側の次の回
 }
 
-export interface NextPA {
+interface NextPA {
   order: number;
   outs: number;
   runners: Runners;
@@ -529,7 +519,7 @@ export function deriveNextPA(doc: GameDoc, inning: number, half: Half): NextPA {
   return { order, outs, runners, batting_slot: null, opponent_slot: pos, batter_id: `o${pos}` };
 }
 
-export interface PADerived { outs: number; runners: Runners; order: number }
+interface PADerived { outs: number; runners: Runners; order: number }
 
 /**
  * 全打席の「開始時アウト・走者・order」を導出する(=表示は保存値でなくこれを使う)。
@@ -559,7 +549,7 @@ export function derivePAStates(doc: GameDoc): Map<PlateAppearance, PADerived> {
   return out;
 }
 
-export interface GameStateSummary {
+interface GameStateSummary {
   inning: number;
   half: Half;
   outs: number;

@@ -91,7 +91,7 @@ export type CorrectTransport = (args: { model: string; systemText: string; userT
  * 既定transport: Responses API + function tool 強制(=構造保証。openai.ts の submit と同じ形)。
  * reasoning "none" は機械的な写し替えのため。max_output_tokens は全文写し替え=出力≒入力長なので余裕を持たせ固定 8000。
  */
-export const defaultCorrectTransport: CorrectTransport = async ({ model, systemText, userText }) => {
+const defaultCorrectTransport: CorrectTransport = async ({ model, systemText, userText }) => {
   const res = await getClient().responses.create(
     {
       model,

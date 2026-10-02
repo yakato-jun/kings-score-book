@@ -3,7 +3,7 @@
 // タイミング(cut)を判定する。切り出した理由: AnalyserNode/MediaRecorder と切り離すことで
 // 閾値・時間条件の振る舞いを vitest で直接検証できる(実マイクなしでテスト可能)。
 
-export interface SegmenterOpts {
+interface SegmenterOpts {
   /** これ以上のRMSを「有声」とみなす閾値(0..1)。環境ノイズで揺れるので将来調整前提 */
   threshold: number;
   /** 発話の区切りとみなす無音の連続時間。短いと文中の間で切れ、長いと体感が遅くなる */
@@ -25,9 +25,9 @@ export const DEFAULT_SEGMENTER_OPTS: SegmenterOpts = {
   relaxedSilenceMs: 800, // hardCap超過後の「息継ぎ」判定。話の勢いを止めずに切れる短さ
 };
 
-export type SegmenterResult = "none" | "cut";
+type SegmenterResult = "none" | "cut";
 
-export interface Segmenter {
+interface Segmenter {
   /** ~100ms間隔で呼ぶ。rms=直近の音量(0..1)、dtMs=前回pushからの経過ms。"cut"=ここでセグメント確定 */
   push(rms: number, dtMs: number): SegmenterResult;
   /** 現セグメントに minVoiceMs 以上の有声があったか(=STTに投げる価値があるか)。停止時の最終セグメント判定用 */

@@ -17,7 +17,7 @@ const chrono = (a: { inning: number; half: Half; order: number }, b: { inning: n
   a.inning - b.inning || halfRank(a.half) - halfRank(b.half) || a.order - b.order;
 
 /** 打席結果コード→日本語ラベル(全コード)。汎用 "H" は表示のみ(選択肢からは除外)。 */
-export const RESULT_LABELS: Record<string, string> = {
+const RESULT_LABELS: Record<string, string> = {
   H1: "単打", H2: "二塁打", H3: "三塁打", HR: "本塁打", H: "安打",
   BB: "四球", HBP: "死球", K: "三振", OUT: "凡退", E: "失策出塁", FC: "野選",
   SH: "犠打", SF: "犠飛", CI: "打妨", INC: "未完了", AUTO_OUT: "自動アウト",
@@ -216,7 +216,7 @@ export function pitchingRowsToRecords(
 }
 
 /** 投手記録フォームの1行(自責 er は空欄=不明を表す文字列・判定は ""=なし)。 */
-export interface PitcherFormRow { player_id: string; name: string; er: string; decision: string }
+interface PitcherFormRow { player_id: string; name: string; er: string; decision: string }
 
 /** 投手記録フォームの初期行(seed)。props(PitcherRowView[])→フォーム行。earned_runs:null は空欄("")＝不明。 */
 export function seedPitcherRows(pitchers: PitcherRowView[]): PitcherFormRow[] {

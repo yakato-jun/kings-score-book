@@ -143,7 +143,7 @@ export async function pendingDraftGameIds(): Promise<Set<string>> {
 }
 
 /** 版一覧(新しい順)。snapshot は重いので外し、メタ＋入力(正本)だけ返す＝版履歴UI/過去ノート参照用。 */
-export type VersionMeta = Omit<GameVersion, "snapshot">;
+type VersionMeta = Omit<GameVersion, "snapshot">;
 export async function listVersions(gameId: string): Promise<VersionMeta[]> {
   const db = await getDb();
   return db
@@ -163,7 +163,7 @@ export async function loadVersion(gameId: string, gen: number): Promise<GameVers
  * 表示用にdocと文脈を解決する。gen指定=過去版(version)、preview=作業中(working)、それ以外=公開版(public)。
  * 公開/下書き/過去版でバナー表記を出し分けるための mode/draft/gen を返す。
  */
-export interface ViewState { doc: GameDoc; gen: number; draft: boolean; mode: "public" | "preview" | "version" }
+interface ViewState { doc: GameDoc; gen: number; draft: boolean; mode: "public" | "preview" | "version" }
 export async function loadForView(gameId: string, opts: { preview?: boolean; gen?: number }): Promise<ViewState | null> {
   if (opts.gen && opts.gen > 0) {
     const v = await loadVersion(gameId, opts.gen);

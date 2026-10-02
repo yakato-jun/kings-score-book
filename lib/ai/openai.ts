@@ -33,7 +33,7 @@ export function parseToolArguments(raw: string | null | undefined): unknown {
 let client: OpenAI | null = null;
 const getClient = (): OpenAI => (client ??= new OpenAI());
 
-export interface OpenAiSubmitArgs {
+interface OpenAiSubmitArgs {
   model: string;
   effort: string;
   systemText: string;

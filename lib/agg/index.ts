@@ -159,7 +159,7 @@ function creditErrors(errs: { pos: string }[] | undefined, pm: Map<string, strin
   }
 }
 
-export interface LineScore {
+interface LineScore {
   innings: number;
   topRuns: number[];
   bottomRuns: number[];
@@ -187,7 +187,7 @@ export function gameLineScore(doc: GameDoc): LineScore {
   return { innings, topRuns, bottomRuns, topHits, bottomHits, topErrors, bottomErrors };
 }
 
-export interface DerivedResult { our: number; their: number; outcome: "win" | "loss" | "tie" }
+interface DerivedResult { our: number; their: number; outcome: "win" | "loss" | "tie" }
 /** 記録した打席からスコア・勝敗を導出する。打席が無ければ null(＝記録から導けない)。
  *  our/their は自軍の攻撃 half(away=表/home=裏)の得点合計。得点数はラインスコア(runs.length)の合算。 */
 export function deriveResult(doc: GameDoc): DerivedResult | null {
@@ -201,7 +201,7 @@ export function deriveResult(doc: GameDoc): DerivedResult | null {
   return { our, their, outcome };
 }
 
-export interface DisplayResult { our: number; their: number; outcome: "win" | "loss" | "tie"; decided_by: string | null; manual: boolean }
+interface DisplayResult { our: number; their: number; outcome: "win" | "loss" | "tie"; decided_by: string | null; manual: boolean }
 /** 表示用の最終結果。手入力(g.result)があればそれを正(manual:true・決着込み)、無ければ記録から導出(manual:false・
  *  decided_by:null)、どちらも無ければ null。基本は導出・手入力は上書き、という表示方針の一元窓口。 */
 export function displayResult(doc: GameDoc): DisplayResult | null {

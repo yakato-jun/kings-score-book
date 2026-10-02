@@ -6,39 +6,6 @@ export const POS_ABBR: Record<string, string> = {
   "6": "遊", "7": "左", "8": "中", "9": "右", DH: "指",
 };
 
-export interface LineupInfo {
-  slot: number | null;   // 打順
-  positions: string[];   // 守備位置ID(就いた順・重複なし)
-  starter: boolean;      // 先発か
-}
-
-/** player_id → 打順/守備位置/先発 */
-export function lineupInfo(snapshots: LineupSnapshot[]): Map<string, LineupInfo> {
-  const info = new Map<string, LineupInfo>();
-  const sorted = [...snapshots].sort((a, b) => a.seq - b.seq);
-  const startIds = new Set((sorted[0]?.lineup ?? []).map((r) => r.player_id));
-  for (const snap of sorted) {
-    for (const r of snap.lineup) {
-      if (!r.player_id) continue;
-      let e = info.get(r.player_id);
-      if (!e) {
-        e = { slot: r.order, positions: [], starter: startIds.has(r.player_id) };
-        info.set(r.player_id, e);
-      }
-      if (e.slot == null && r.order != null) e.slot = r.order;
-      if (r.position_id && !e.positions.includes(r.position_id)) e.positions.push(r.position_id);
-    }
-  }
-  return info;
-}
-
-/** 位置ラベル(例 "中/投")。先発は () 付き。 */
-export function posLabel(info: LineupInfo | undefined): string {
-  if (!info) return "";
-  const label = info.positions.map((p) => POS_ABBR[p] ?? p).join("/");
-  return info.starter ? `(${label})` : label;
-}
-
 export type Role = "starter" | "pitcher" | "pinch_hitter" | "pinch_runner" | "sub";
 
 export interface LineupRow {
@@ -117,7 +84,7 @@ export function roleLabel(row: LineupRow | undefined): string {
   }
 }
 
-export interface GridCell { text: string; hit: boolean; rbi: boolean; inning: number; half: Half; order: number; }
+interface GridCell { text: string; hit: boolean; rbi: boolean; inning: number; half: Half; order: number; }
 
 /**
  * イニング別打席結果グリッド: batter_id → inning → セル[]。

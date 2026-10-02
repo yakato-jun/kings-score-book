@@ -71,11 +71,6 @@ export interface SeasonBox {
   attendance: AttendanceLine[];
 }
 
-/** 投球回を X.Y 形式(Y=1/3単位)の数値にする。15→5, 16→5.1, 17→5.2 */
-export function ipFromOuts(outs: number): number {
-  return Math.floor(outs / 3) + (outs % 3) / 10;
-}
-
 /** 表示用: 投球回 "5.2" 形式の文字列 */
 export function ipStr(outs: number): string {
   return `${Math.floor(outs / 3)}.${outs % 3}`;

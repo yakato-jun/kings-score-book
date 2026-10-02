@@ -5,7 +5,7 @@
 import { loadPlayerList, writePlayer } from "@/lib/db/players";
 import type { Player } from "@/lib/types/v2";
 
-export interface PlayerInput {
+interface PlayerInput {
   id: string;
   name: string;
   type?: string;

@@ -15,7 +15,7 @@
 import type { GameDoc, PlateAppearance, RunOverride, RunEvent, Annotation } from "@/lib/types/v2";
 import { outsMade } from "@/lib/agg";
 
-export interface ReworkReport {
+interface ReworkReport {
   game_id: string;
   responsible_moved: number; // runs[].responsible_pitcher_id → run_overrides(manual) 件数
   outs_nulled: number;       // 導出一致で null 戻し

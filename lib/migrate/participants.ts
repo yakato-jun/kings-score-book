@@ -30,7 +30,7 @@ export class MigrationError extends Error {
   }
 }
 
-export interface MigrationReport {
+interface MigrationReport {
   game_id: string;
   idMap: Map<string, string>; // 旧own-side ID → 新participant ID
   participants: Participant[];
@@ -200,7 +200,7 @@ export function migrateToParticipants(
 // 検証（§9.8）: 数値0差分（全scope・キー翻訳）＋属性突合
 // ---------------------------------------------------------------------------
 
-export interface VerifyResult {
+interface VerifyResult {
   ok: boolean;
   errors: string[];
   notes: string[]; // 合格だが報告すべき事実(出欠補完など)

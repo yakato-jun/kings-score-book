@@ -13,7 +13,7 @@ import type { Half, FieldingOut, FieldingError, DirectBatting, DirectPitching, D
 export type Person = { id: string; name: string; kind?: string };
 export type PostFn = (op: Record<string, unknown>, onOk?: () => void) => void;
 
-export const POS: [string, string][] = [
+const POS: [string, string][] = [
   ["1", "投"], ["2", "捕"], ["3", "一"], ["4", "二"], ["5", "三"], ["6", "遊"], ["7", "左"], ["8", "中"], ["9", "右"], ["DH", "DH"],
 ];
 const HALF_JP = (h: Half) => (h === "top" ? "表" : "裏");
@@ -33,7 +33,7 @@ const DECISION: [string, string][] = [["", "なし"], ["W", "勝"], ["L", "敗"]
  * 候補数は動的: max(12, その試合の最大既出番号+3)。全員打ちで12人超の相手でもハード上限を持たない
  * (打順は順に入力されるので+3の余裕で常に足りる)。
  */
-export const oppPlaceholders = (maxSeenSlot = 0): Person[] =>
+const oppPlaceholders = (maxSeenSlot = 0): Person[] =>
   Array.from({ length: Math.max(12, maxSeenSlot + 3) }, (_, i) => ({ id: `o${i + 1}`, name: `相手${i + 1}番` }));
 
 /** 相手プレースホルダ(oN)→「相手N番」。それ以外は素通し(候補外の現値を表示する最終フォールバック)。 */
@@ -137,7 +137,7 @@ type DuringRow = {
 };
 
 /** ===== D-1 フル打席エディタ ===== */
-export function AtBatEditor({ row, participants, masters, post, busy, onClose, gameId, oppMaxSlot }: {
+function AtBatEditor({ row, participants, masters, post, busy, onClose, gameId, oppMaxSlot }: {
   row: PARowView; participants: Person[]; masters: Person[]; post: PostFn; busy: boolean; onClose: () => void; gameId: string; oppMaxSlot?: number;
 }) {
   const { promptText } = useDialog();

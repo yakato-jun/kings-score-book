@@ -2,7 +2,7 @@
 // 途中テキスト(delta)は item_id 単位で届き、確定(completed)の到着順は item 間で保証されない。
 // 「ノートへの挿入順=発話順」を守るため、item を初出順に並べ、先頭から連続して確定した分だけを放出する。
 
-export interface LiveOrdering {
+interface LiveOrdering {
   delta(itemId: string, text: string): void;
   /** 確定。発話順で放出可能になった確定テキスト(空は除く)を返す */
   completed(itemId: string, transcript: string): string[];

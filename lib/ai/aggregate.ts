@@ -9,9 +9,9 @@ import { ingestWholeGame, ingestDelta, ingestRevert, AI_MODEL } from "./agent";
 import { loadWorking, publicGen } from "../db/games";
 import { unresolvedUnclear, type GameFlag } from "../ops/validate";
 
-export interface Usage { input: number; output: number; cacheRead: number; cacheWrite: number }
+interface Usage { input: number; output: number; cacheRead: number; cacheWrite: number }
 // applied=この集計/取り消しで実際に反映したop数(0=変化点なし)。F0=反映後に残る要確認(unclear)数。両者は別物。
-export interface AggregateResult { flags: GameFlag[]; F0: number; applied: number; usage: Usage; calls: number; clarification: string | null }
+interface AggregateResult { flags: GameFlag[]; F0: number; applied: number; usage: Usage; calls: number; clarification: string | null }
 
 /** ノートを集計して下書きへ反映。戻り値は残flag(=ユーザー修正が要る箇所)。source:ai, draft:true で積む。 */
 export async function aggregateNotes(gameId: string, notes: string, opts?: { model?: string; date?: string }): Promise<AggregateResult> {

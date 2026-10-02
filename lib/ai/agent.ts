@@ -14,11 +14,9 @@ import { applyOps, getGameSummary, type GameOpInput } from "@/lib/ops/games";
 import { listPlayers } from "@/lib/ops/players";
 import { loadPlayers } from "@/lib/db/players";
 import { docNameResolver } from "@/lib/names";
-import { loadWorking, loadVersion, listVersions, loadGame, currentGen, publicGen, GenConflictError } from "@/lib/db/games";
-import { derivePAStates } from "@/lib/ops/gamestate";
+import { loadVersion, listVersions, loadGame, currentGen, publicGen, GenConflictError } from "@/lib/db/games";
 import { renderPlayByPlay } from "@/lib/textlog";
 import { isOpenAiModel, openaiSubmitOnce } from "./openai";
-import type { SegType } from "./segment";
 import type { Half, Runners, Annotation, GameDoc } from "@/lib/types/v2";
 
 const client = new Anthropic();
@@ -35,9 +33,9 @@ export const APP_EFFORT: Effort = EFFORTS.includes(process.env.AI_EFFORT as Effo
 export const thinkingFor = (model: string): Anthropic.ThinkingConfigParam =>
   /fable|mythos/i.test(model) ? { type: "adaptive" } : { type: "disabled" };
 
-export interface Applied { tool: string; summary: string }
-export interface AgentResult { applied: Applied[]; clarification: string | null; gameId: string; usage?: { input: number; output: number; cacheRead: number; cacheWrite: number } }
-export interface Scene { game_id?: string; date?: string; inning?: number; half?: string; order?: number; player_id?: string }
+interface Applied { tool: string; summary: string }
+interface AgentResult { applied: Applied[]; clarification: string | null; gameId: string; usage?: { input: number; output: number; cacheRead: number; cacheWrite: number } }
+interface Scene { game_id?: string; date?: string; inning?: number; half?: string; order?: number; player_id?: string }
 
 // 打席の付随イベント(addPlateAppearance のサブスキーマ)。得点(runs)はAIが出さずエンジンが導出。
 const fieldingSchema = {
@@ -111,50 +109,6 @@ export const SUBMIT_TOOL: Anthropic.Tool = {
   },
 };
 
-// ===== 型別の狭スキーマ(Q2): セグメント種別ごとに最小スキーマで解釈 → トークン減・op種別の取り違え防止 =====
-// 打席だけのアイテム(op/メタ/スタメン/edit フィールドを持たない＝プロンプトが小さい)
-const atbatItem = {
-  type: "object",
-  properties: {
-    result_code: { type: "string", enum: ["H1", "H2", "H3", "HR", "OUT", "K", "BB", "HBP", "FC", "E", "SH", "SF", "INC"], description: "H1単打 H2二塁打 H3三塁打 HR本塁打 OUT凡退 K三振 BB四球 HBP死球 FC野選 E失策 SH犠打 SF犠飛 INC未完了" },
-    batter_id: { type: "string", description: "打者。自軍の選手は P-id。相手チームは「相手N番」(N=打順)。不明なら省略" },
-    inning: { type: "integer", description: "回" },
-    half: { type: "string", enum: ["top", "bottom"], description: "top/bottom" },
-    baserunning_after: baseAfterSchema, baserunning_during: baseDuringSchema, fielding: fieldingSchema,
-    // [§14.1 研究A・見送り中] stated_* はスキーマ非公開=不活性(DESIGN §14.1)
-    note: { type: ["string", "null"], description: "実況" },
-    unclear: { type: ["string", "null"], description: "この打席に確証が無い/曖昧な点があれば理由を書く(無ければnull)。打席は落とさずベスト推定で記録し、不明点をここに残す" },
-  },
-  required: ["result_code"],
-};
-const ATBAT_TOOL: Anthropic.Tool = {
-  name: "atbat",
-  description: "入力テキストにある全打席を、1打席=operations の1要素として順に出す。得点・得点者・打点・投捕はサーバが導くので入れない。曖昧な打席も落とさず記録し、その打席の unclear に不明点(理由)を書く。全体が確定不能な時だけ clarification に質問。",
-  input_schema: { type: "object", properties: { operations: { type: "array", items: atbatItem }, clarification: { type: ["string", "null"] } }, required: ["operations", "clarification"] },
-};
-
-// 守備位置変更だけの狭スキーマ(他フィールドを持たない＝プロンプト小)
-const defenseItem = {
-  type: "object",
-  properties: {
-    inning: { type: "integer", description: "守備変更が有効になる回。例『7回表』" },
-    half: { type: "string", enum: ["top", "bottom"], description: "守備側。相手の攻撃half。自軍が後攻ならtop" },
-    changes: defenseChangeSchema,
-  },
-  required: ["changes"],
-};
-const DEFENSE_TOOL: Anthropic.Tool = {
-  name: "defense",
-  description: "試合途中の守備位置変更を operations で出す。該当選手の位置だけ差し替える。打順・他の選手・スタメンは消さない。曖昧なら operations を空にし clarification に質問。",
-  input_schema: { type: "object", properties: { operations: { type: "array", items: defenseItem }, clarification: { type: ["string", "null"] } }, required: ["operations", "clarification"] },
-};
-
-const ROUTE: Record<SegType, { tool: Anthropic.Tool; op?: string }> = {
-  atbat: { tool: ATBAT_TOOL, op: "addPlateAppearance" },
-  defense: { tool: DEFENSE_TOOL, op: "changeDefense" },
-  meta: { tool: SUBMIT_TOOL }, lineup: { tool: SUBMIT_TOOL }, edit: { tool: SUBMIT_TOOL }, other: { tool: SUBMIT_TOOL },
-};
-
 /** 不変の指示(キャッシュ対象)。制約はスキーマ(各フィールドのdescription/enum)が持つ。ここは役割だけ。export は診断ハーネス用。 */
 export function instructions(): string {
   return "草野球チーム N-KINGS のスコア係。メンバーが自由に書いた試合メモ（断片的・曖昧でもよく、記法も自由で凡例が付くこともある）を試合記録に起こす。メモは打席の並びとして前後がつながっているので、各打席はその流れ（アウト数・走者の増減）の中で読む。書かれた出来事だけを記録し、書かれていないことは埋めない。不確かな打席は unclear に理由を添えて記録し、試合全体が読み取れない時だけ clarification で質問する。走者の同定・塁の配置・得点の計算は、記録された打席結果と走者の移動（どの塁からどの塁へ）を入力にサーバが行う。だから移動は元の塁が分かる形で記録する。";
@@ -199,7 +153,7 @@ const BROKEN_OUTPUT_CLARIFICATION = "AIの出力形式が崩れました。も�
 
 interface SubmitOut { operations: Op[]; clarification: string | null; usage: NonNullable<AgentResult["usage"]> }
 /** provider 中立の「1回の submit 呼び出し」の結果。toolInput undefined = 構造化出力を復元できなかった(→リトライ対象)。 */
-export interface SubmitOnceOut { toolInput: unknown; usage: NonNullable<AgentResult["usage"]> }
+interface SubmitOnceOut { toolInput: unknown; usage: NonNullable<AgentResult["usage"]> }
 
 /** リクエスト実行→応答取り出しの共通処理。operations が復元不能なら同一リクエストをもう1回だけ再実行し、再度不能なら operations 空＋定型 clarification で終える(例外は投げない)。usage は試行の合算。 */
 async function requestSubmit(run: () => Promise<SubmitOnceOut>): Promise<SubmitOut> {
@@ -322,36 +276,6 @@ export function toGameOp(rawOp: Op): GameOpInput { // export はテスト用(写
   throw new Error(`未知の操作: ${op.op}`);
 }
 
-// ===== パーサ(自然言語→構造化op) を差し替え可能にする =====
-// prod = Anthropic API(本番)。試行錯誤/テスト = フィクスチャ(API不要)。
-// apply 以降(toGameOp→applyOps→検証)は決定論なので共通。
-
-export interface ParseInput { messages: Anthropic.MessageParam[]; scene?: Scene; priorText?: string; dict: string; summary: unknown }
-export interface ParseOutput { operations: Op[]; clarification: string | null; usage?: AgentResult["usage"] }
-export type Parser = (input: ParseInput) => Promise<ParseOutput>;
-
-/** モデル指定の本番パーサを作る(強制ツールで構造化出力・thinkingはモデル別切替・effort低・キャッシュ)。ここだけ実APIを叩く。 */
-export function makeApiParser(model: string, maxTokens = 4000): Parser {
-  return async ({ messages, scene, dict, summary }) => {
-    const system = buildSystem(dict, summary, scene);
-    const r = await requestSubmit(() => submitOnceFor(model, { system, messages, maxTokens }));
-    return { operations: r.operations, clarification: r.clarification, usage: r.usage };
-  };
-}
-
-/** 本番既定パーサ(AI_MODEL)。 */
-export const apiParser: Parser = makeApiParser(AI_MODEL);
-
-/** 試行錯誤/テスト用パーサ: 最新ユーザー発言→canned 構造化出力 のマップで代替(API不要)。 */
-export function fixtureParser(map: Record<string, { operations?: Op[]; clarification?: string | null }>): Parser {
-  return async ({ messages }) => {
-    const last = [...messages].reverse().find((m) => m.role === "user");
-    const key = typeof last?.content === "string" ? last.content : "";
-    const f = map[key] ?? { operations: [] };
-    return { operations: f.operations ?? [], clarification: f.clarification ?? null };
-  };
-}
-
 /**
  * 1試合まるごと1コールで取り込む。ノート全文(メタ＋スタメン＋全打席＋守備変更)を SUBMIT_TOOL に渡し、
  * 返ってきた operations を1世代で適用する。得点・投捕・runner_id はエンジンが導出するので、モデルは事実だけ。
@@ -440,106 +364,4 @@ export async function ingestRevert(gameId: string, gen: number, model: string): 
   // 公開版を土台に「取り消しops」を畳んで draft 化(replaceしない)。出自は edit_source:"revert" + input に対象genを刻む。
   if (gameOps.length) await applyOps(gameId, gameOps, { source: "ai", draft: true, edit_source: "revert", input: { kind: "manual", text: `gen ${gen} の変更を取り消し` } });
   return { count: gameOps.length, clarification: r.clarification, usage };
-}
-
-export async function runAgent(messages: Anthropic.MessageParam[], scene?: Scene, priorText?: string, parser: Parser = apiParser): Promise<AgentResult> {
-  const gameId = scene?.game_id;
-  if (!gameId) throw new Error("対象試合(scene.game_id)が指定されていません");
-
-  const [dict, summary] = await Promise.all([dictionary(), getGameSummary(gameId)]);
-  const out = await parser({ messages, scene, priorText, dict, summary });
-  const usage = out.usage;
-
-  let gameOps: GameOpInput[];
-  try {
-    gameOps = (out.operations ?? []).map(toGameOp);
-  } catch (e) {
-    return { applied: [], clarification: `操作の解釈に失敗しました: ${(e as Error).message}`, gameId, usage };
-  }
-
-  // 1返却＝1世代で原子的に反映(途中失敗なら何も入らない)
-  let summaries: string[] = [];
-  if (gameOps.length) {
-    try {
-      summaries = await applyOps(gameId, gameOps, { source: "ai", draft: true });
-    } catch (e) {
-      return { applied: [], clarification: `反映できませんでした: ${(e as Error).message}`, gameId, usage };
-    }
-  }
-  const applied: Applied[] = summaries.map((s, i) => ({ tool: gameOps[i]?.type ?? "op", summary: s }));
-  return { applied, clarification: out.clarification ?? null, gameId, usage };
-}
-
-/**
- * セグメント1件を型別の狭スキーマで解釈→適用(segment→loop の per-event)。
- * 狭スキーマで op が出ず content がある(型取り違えの疑い)なら、フルスキーマで再解釈してから諦める(=フォールバック層2)。
- */
-export async function runSegment(seg: { type: SegType; text: string }, scene: Scene, model: string): Promise<AgentResult> {
-  const gameId = scene?.game_id;
-  if (!gameId) throw new Error("対象試合(scene.game_id)が指定されていません");
-  const [dict, summary] = await Promise.all([dictionary(), getGameSummary(gameId)]);
-  const system = buildSystem(dict, summary, scene);
-  const callTool = async (tool: Anthropic.Tool, opInject?: string) => {
-    const res = await client.messages.create(
-      { model, max_tokens: 4000, thinking: thinkingFor(model), ...(/haiku/i.test(model) ? {} : { output_config: { effort: APP_EFFORT } }), system, tools: [tool], tool_choice: { type: "tool", name: tool.name }, messages: [{ role: "user", content: seg.text }] },
-      { timeout: CALL_TIMEOUT_MS }
-    );
-    const tu = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    const o = (tu?.input ?? { operations: [], clarification: null }) as { operations?: Op[]; clarification?: string | null };
-    return {
-      ops: (o.operations ?? []).map((x) => (opInject ? ({ ...x, op: opInject } as Op) : x)),
-      clarification: o.clarification ?? null,
-      usage: { input: res.usage.input_tokens, output: res.usage.output_tokens, cacheRead: res.usage.cache_read_input_tokens ?? 0, cacheWrite: res.usage.cache_creation_input_tokens ?? 0 },
-    };
-  };
-  const route = ROUTE[seg.type] ?? ROUTE.other;
-  let { ops, clarification, usage } = await callTool(route.tool, route.op);
-  if (ops.length === 0 && !clarification && route.tool !== SUBMIT_TOOL && seg.text.trim()) {
-    const f = await callTool(SUBMIT_TOOL); // 型取り違え救済: フルスキーマで再解釈
-    ops = f.ops; clarification = f.clarification;
-    usage = { input: usage.input + f.usage.input, output: usage.output + f.usage.output, cacheRead: usage.cacheRead + f.usage.cacheRead, cacheWrite: usage.cacheWrite + f.usage.cacheWrite };
-  }
-  let gameOps: GameOpInput[];
-  try { gameOps = ops.map(toGameOp); } catch (e) { return { applied: [], clarification: `解釈失敗: ${(e as Error).message}`, gameId, usage }; }
-  let summaries: string[] = [];
-  if (gameOps.length) {
-    try { summaries = await applyOps(gameId, gameOps, { source: "ai", draft: true }); } catch (e) { return { applied: [], clarification: `反映失敗: ${(e as Error).message}`, gameId, usage }; }
-  }
-  return { applied: summaries.map((s, i) => ({ tool: gameOps[i]?.type ?? "op", summary: s })), clarification, gameId, usage };
-}
-
-/**
- * flag が付いた打席を「元テキストを盤面付きで再パース → その打席を edit で差し替え」する(選択ループの1コール)。
- * 盤面(現状state)が context に入るので、bulk が取りこぼした走塁の細部を loop 品質で直せる。
- */
-export async function reloopPA(gameId: string, text: string, inning: number, half: Half, order: number, model: string): Promise<{ usage: AgentResult["usage"] }> {
-  const [dict, full, w] = await Promise.all([dictionary(), getGameSummary(gameId), loadWorking(gameId)]);
-  // 重要: 注入する盤面は「この打席の開始時」(現在地=試合末尾ではない)。記録もこの打席より前だけ。
-  let summary: unknown = full;
-  if (full && w) {
-    const r = (h: Half) => (h === "top" ? 0 : 1);
-    const before = (p: { inning: number; half: Half; order: number }) =>
-      p.inning < inning || (p.inning === inning && r(p.half) < r(half)) || (p.inning === inning && p.half === half && p.order < order);
-    const target = w.doc.plate_appearances.find((p) => p.inning === inning && p.half === half && p.order === order);
-    const st = target ? derivePAStates(w.doc).get(target) : undefined;
-    const recorded = w.doc.plate_appearances.filter(before)
-      .sort((a, b) => a.inning - b.inning || r(a.half) - r(b.half) || a.order - b.order)
-      .map((p) => `${p.inning}${p.half === "top" ? "表" : "裏"}#${p.order} ${p.batter_id} ${p.result}${p.note ? `(${p.note})` : ""}`)
-      .slice(-8);
-    const fs = full as unknown as { state: Record<string, unknown> } & Record<string, unknown>;
-    if (st) summary = { ...fs, state: { ...fs.state, inning, half, outs: st.outs, runners: st.runners }, recorded };
-  }
-  const system = buildSystem(dict, summary, { game_id: gameId });
-  const res = await client.messages.create(
-    { model, max_tokens: 4000, thinking: thinkingFor(model), ...(/haiku/i.test(model) ? {} : { output_config: { effort: APP_EFFORT } }), system, tools: [ATBAT_TOOL], tool_choice: { type: "tool", name: "atbat" }, messages: [{ role: "user", content: text }] },
-    { timeout: CALL_TIMEOUT_MS }
-  );
-  const usage = { input: res.usage.input_tokens, output: res.usage.output_tokens, cacheRead: res.usage.cache_read_input_tokens ?? 0, cacheWrite: res.usage.cache_creation_input_tokens ?? 0 };
-  const tu = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-  const atbat = ((tu?.input ?? { operations: [] }) as { operations?: Op[] }).operations?.[0];
-  if (!atbat) return { usage };
-  try {
-    await applyOps(gameId, [toGameOp({ ...atbat, op: "editPlateAppearance", inning, half, order } as Op)], { source: "ai", draft: true });
-  } catch { /* 失敗は flag のまま残す(上位で残差扱い) */ }
-  return { usage };
 }

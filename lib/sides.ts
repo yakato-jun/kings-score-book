@@ -13,7 +13,7 @@
  */
 import type { GameDoc, PlateAppearance, Half } from "@/lib/types/v2";
 
-export type Team = "kings" | "opponent";
+type Team = "kings" | "opponent";
 
 /** 自軍が攻撃する half（away=先攻=top / home=後攻=bottom）。home_away不明は top 扱い。 */
 export function kingsBattingHalf(doc: GameDoc): Half {

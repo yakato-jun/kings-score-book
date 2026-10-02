@@ -145,7 +145,7 @@ export function renderPlayByPlay(doc: GameDoc, nameOf: (id: string) => string = 
 
 const HIT = new Set(["H", "H1", "H2", "H3", "HR"]);
 
-export interface HalfInning {
+interface HalfInning {
   inning: number;
   half: Half;
   kingsOffense: boolean; // 自軍の攻撃か

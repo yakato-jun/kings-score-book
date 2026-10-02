@@ -36,7 +36,7 @@ export const UNSAVED_GUARD_DIALOG = {
 } as const;
 
 /** useDialog().confirm と同形の最小型(lib を components 依存にしないため局所定義)。 */
-export type ConfirmFn = (opts: {
+type ConfirmFn = (opts: {
   title: string;
   body?: string;
   confirmLabel?: string;

@@ -5,11 +5,11 @@
  */
 import { getDb } from "./mongo";
 
-export type JobStatus = "pending" | "running" | "done" | "error" | "timeout";
+type JobStatus = "pending" | "running" | "done" | "error" | "timeout";
 const COL = "chat_jobs";
-export const STALE_MS = 180_000; // pending/running のまま更新が止まったら timeout 扱い(集計は長め)
+const STALE_MS = 180_000; // pending/running のまま更新が止まったら timeout 扱い(集計は長め)
 
-export interface ChatJob {
+interface ChatJob {
   job_id: string;
   game_id: string;
   status: JobStatus;

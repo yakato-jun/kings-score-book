@@ -14,7 +14,7 @@ const FMT: Record<NonNullable<Column["format"]>, (v: number) => string> = {
   ip: (v) => `${Math.floor(v / 3)}.${v % 3}`, // outs → "5.2"
 };
 
-export type Row = Record<string, number | string>;
+type Row = Record<string, number | string>;
 
 export function SortableTable({
   columns,

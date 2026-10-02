@@ -10,7 +10,7 @@ import { BASEBALL_TERMS } from "./voice";
 export const STT_PROMPT = "草野球チームN-KINGSの試合結果を口述したメモ。選手名、野球用語、「1回表」「ランナー一二塁」のような表現を含む日本語の独り言。";
 
 /** keywords: 選手のフルネーム+姓(口述は姓が主)+野球用語。制約(1語1行・<>や改行を含めない)に合わせて浄化。 */
-export function buildKeywords(dict: string[]): string[] {
+function buildKeywords(dict: string[]): string[] {
   return [...new Set(
     [...dict, ...dict.map((n) => n.split(/\s+/)[0]), ...BASEBALL_TERMS]
       .map((k) => k.replace(/[<>\r\n]/g, "").trim())

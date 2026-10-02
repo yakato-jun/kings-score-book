@@ -10,7 +10,7 @@ import { createGuestPlayer } from "./players";
 import { docNameResolver } from "@/lib/names";
 import { applyValidation } from "./validate";
 import { gameState, deriveNextPA, kingsBatHalf, lineupSlots, resolvePATarget, deriveRuns, foldRunners, resolveBaserunningIds, mergeManualRuns } from "./gamestate";
-import { outsMade, effectiveSnapshot, posMap } from "@/lib/agg";
+import { effectiveSnapshot } from "@/lib/agg";
 import { ownSidePaIds } from "@/lib/sides";
 import type {
   GameDoc, Game, GameResult, EditSource, VersionInput, Half, PlateAppearance,
@@ -41,7 +41,7 @@ export async function newGameId(gen: () => string = generateGameId): Promise<str
 }
 
 /** コミットの共通オプション。UI=既定(admin/manual/非draft)、AI=draft:true＋edit_source/input を渡す。 */
-export interface CommitOpts {
+interface CommitOpts {
   source?: string; // updated_by (当面 admin)
   draft?: boolean;
   base_gen?: number;
@@ -57,26 +57,6 @@ const co = (o: CommitOpts) => ({
   input: o.input ?? null,
 });
 
-/** 一覧用に各試合のメタ(game)だけ返す */
-export async function listGameMeta(): Promise<Game[]> {
-  const games = await loadGames();
-  return games.map((d) => d.game).sort((a, b) => b.date.localeCompare(a.date));
-}
-
-/** AI入力の選択肢用: 公開試合＋下書きのみの試合(未公開)を、下書きフラグ付きで返す。 */
-export async function listGamesForChat(): Promise<{ id: string; date: string; opponent: string; draft: boolean }[]> {
-  const published = await loadGames();
-  const pubIds = new Set(published.map((d) => d.game.id));
-  const drafts = new Set(await draftGameIds());
-  const out = published.map((d) => ({ id: d.game.id, date: d.game.date, opponent: d.game.opponent, draft: drafts.has(d.game.id) }));
-  for (const id of drafts) {
-    if (pubIds.has(id)) continue; // 公開済みは上で出している
-    const w = await loadWorking(id);
-    if (w) out.push({ id, date: w.doc.game.date, opponent: w.doc.game.opponent, draft: true });
-  }
-  return out.sort((a, b) => b.date.localeCompare(a.date));
-}
-
 // ===== 参加者(§9)ヘルパ =====
 // participants = 試合の人リスト = 出欠。全試合データはこの不透明IDを参照する(打席データと選手マスタを疎結合に)。
 
@@ -91,7 +71,7 @@ function nextParticipantId(parts: Participant[]): string {
 }
 
 /** V-B: 同一試合で複数参加者が同じ選手(マスタ)を指すのを禁止(シーズン二重計上の構造的防止)。 */
-export function assertNoDuplicateRoster(parts: Participant[]): void {
+function assertNoDuplicateRoster(parts: Participant[]): void {
   const seen = new Map<string, string>();
   for (const p of parts) {
     if (p.link.kind !== "roster") continue;
@@ -491,13 +471,13 @@ export interface LineupRowInput {
 }
 
 /** 入力用の走塁移動: runner_id は省略可＝サーバが from塁の走者で確定する(resolveBaserunningIds)。 */
-export type BaserunMoveInput = Omit<BaserunMove, "runner_id"> & { runner_id?: string };
+type BaserunMoveInput = Omit<BaserunMove, "runner_id"> & { runner_id?: string };
 /** 入力用の打席中走塁イベント(runners の runner_id 省略可)。 */
-export type BaserunDuringInput = Omit<BaserunDuring, "runners"> & { runners?: BaserunMoveInput[] };
+type BaserunDuringInput = Omit<BaserunDuring, "runners"> & { runners?: BaserunMoveInput[] };
 
 /** [C-6/F-2] runs[]の記録帰属の上書き(責任投手のみ)。導出runsへ走者IDキーでマージし、保存は runs に畳む。
  * 自責フラグ(earned)は上書きできない＝常にエンジン導出の近似。自責点の正本は投手記録(doc.pitching §10.3 Phase C差し戻し)。 */
-export interface RunOverrideInput {
+interface RunOverrideInput {
   runner_id: string;
   responsible_pitcher_id?: string | null;
 }
@@ -532,7 +512,7 @@ export interface AddPAInput {
 
 /** [§0/§11 得点(走者不明)] 人が明示する得点run。runner_id=null=得点者不明(§0-C)。
  * origin:"manual"でPA.runsへ畳まれ、以後の編集/スイープの再導出でも保全される(deriveRuns=autoとマージ)。 */
-export interface ManualRunInput {
+interface ManualRunInput {
   runner_id?: string | null; // 既定/得点(走者不明)トグルは null
   rbi?: boolean; // 既定 true(打者に打点を付ける)
 }
@@ -583,7 +563,7 @@ export type InsertPAInput = Omit<AddPAInput, "inning" | "half"> & {
 };
 
 /** [C-2] 交代等の有効タイミング(打席粒度)。before_order 未指定=その半イニングの既存打席数+1(現行既定)。 */
-export interface OpTiming { inning: number; half: Half; before_order?: number | null }
+interface OpTiming { inning: number; half: Half; before_order?: number | null }
 
 /** [C-2] 選手交代: out をラインアップから外し、同じ打順スロット/守備位置に in を入れる。 */
 export interface SubstituteInput {
