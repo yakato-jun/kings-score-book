@@ -1350,6 +1350,16 @@ function reduceEditPA(doc0: GameDoc, rawInput: EditPAInput, masters: Map<string,
   return overrideRunsAt(swept, idx, input.run_overrides);
 }
 
+/**
+ * [採用ゲート用] 打席編集をメモリ内の doc に適用した結果だけを返す純関数(DBへ一切書かない)。
+ * 中身は reduceEditPA そのもの＝本番の編集経路(applyOps→reduceEditPA)と同一のリデューサを通すことで、
+ * 「AIが提案した修正を適用したら検算がどうなるか」を本番挙動そのままで先に評価できる(scripts/eval_reread.ts の G2)。
+ * 検算(validateGame)は呼び出し側が結果 doc に対して行う。既存の reducer の挙動は変えない。
+ */
+export function previewEditPA(doc: GameDoc, input: EditPAInput, masters: Map<string, string>): GameDoc {
+  return reduceEditPA(doc, input, masters);
+}
+
 /** 既存打席を削除し、その half-inning の order を 1..N に振り直す。
  * 交代スナップショットの有効境界(before_order)も同じ半イニング内で再マップする
  * (§10.3 実バグ①: 削除した打席より後ろを指す境界は1つ繰り上げないと、以降の投手成績・守備帰属が1打席ズレる)。
@@ -1571,14 +1581,20 @@ function regraftAfterReplace(oldDoc: GameDoc, newDoc: GameDoc, masters: Map<stri
  * マスタ書込(createGuestPlayer)はここで行い、純reducer(reduce*)には player_id だけが渡る(doc→doc 純粋性を保つ)。
  * best-effort＝重複防止は作り込まない(同名の別マスタは許容・後から mergePlayer で名寄せ)。
  * 解決した player_id は masters(メモリ)にも載せ、reducer の存在チェック(masters.has)を通す。
+ * export は評価ハーネス用(createGuest 差替え)。本番の呼び口は applyOps のまま。
  */
-async function resolveGuestNamesInOps(ops: GameOpInput[], masters: Map<string, string>, created?: Set<string>): Promise<GameOpInput[]> {
+export async function resolveGuestNamesInOps(
+  ops: GameOpInput[], masters: Map<string, string>, created?: Set<string>,
+  // 助っ人の新規作成口。既定=マスタ書込(createGuestPlayer)。評価ハーネス(scripts/eval_reread.ts --synth)はここに
+  //   「名前→仮ID(GUEST:名前)」の純粋な関数を差して、DBへ一切書かずに本番と同じ解決順序を再現する。
+  createGuest: (name: string) => Promise<{ id: string; name: string }> = createGuestPlayer,
+): Promise<GameOpInput[]> {
   const cache = new Map<string, string>(); // 名前→player_id(同一コール内で同名を二度解決しない・基本の名前解決)
   const idFor = async (name: string): Promise<string> => {
     const nm = name.trim();
     const hit = cache.get(nm);
     if (hit) return hit;
-    const p = await createGuestPlayer(nm);
+    const p = await createGuest(nm);
     created?.add(p.id); // このコールで新規作成した助っ人(失敗時の掃除対象=applyOps が参照する)
     cache.set(nm, p.id);
     masters.set(p.id, p.name); // reducer の masters.has(player_id) を通す
@@ -1655,32 +1671,22 @@ export function buildBatterNameResolver(masters: Map<string, string>): (raw: str
 }
 
 /**
- * 操作の配列を1世代で原子的に反映(AIの1返却＝これ1回)。
- * 作業中(下書き)を1回ロード→順に畳む→1回 commit。base_gen で楽観ロック。
- * 戻り値は各opの人間向け要約(画面の「反映しました」用)。
+ * ops を doc へ畳む純関数(DB非依存・applyOps の fold 部分)。ops は player_id 解決済み(resolveGuestNamesInOps 後)であること。
+ * 全置換(replace)のクリア → 各 reducer → [F-4] 再グラフト → 不変ID採番 → applyValidation まで＝applyOps の commit 直前の doc。
+ * export は評価ハーネス用(scripts/eval_reread.ts --synth が AI集計をメモリ内で畳んで検算する)。本番の書き口は applyOps のまま。
  */
-export async function applyOps(gameId: string, ops: GameOpInput[], opts: CommitOpts = {}): Promise<string[]> {
-  const w = await loadWorking(gameId);
-  const masters = await loadPlayers(); // 人物参照の解決(マスタID→参加者の自動追加)に使う
-  // [§12 P1] 助っ人名→種別guestマスタ選手(player_id)へ解決(参加者化の境界)。以降 reducer は player_id 一本。
-  // [助っ人ライフサイクル・失敗経路] マスタ書込(createGuestPlayer)は版commitと非トランザクション=途中のopが
-  // throw すると版は残らないのに助っ人だけ残り、AI辞書を汚染して次回の集計でID取り違えの温床になる(2026-08-22 実障害:
-  // 失敗集計7回分の孤児)。このコールで作った助っ人を記録し、失敗時は「どこからも参照されていなければ」掃除する
-  // (deleteUnreferencedGuests=全試合+全下書きを走査。手動追加や他試合参照の助っ人は候補外なので消えない)。
-  const createdGuests = new Set<string>();
-  const resolvedOps = await resolveGuestNamesInOps(ops, masters, createdGuests);
-  try {
-  let doc: GameDoc | null = w?.doc ?? null;
-  const oldDoc: GameDoc | null = opts.replace ? doc : null; // [F-4] 全置換前の旧doc(投手記録・ベンチ参加者の再グラフト用)
+export function foldOpsInMemory(gameId: string, baseDoc: GameDoc | null, ops: GameOpInput[], masters: Map<string, string>, replace = false): { doc: GameDoc; summaries: string[] } {
+  let doc: GameDoc | null = baseDoc;
+  const oldDoc: GameDoc | null = replace ? doc : null; // [F-4] 全置換前の旧doc(投手記録・ベンチ参加者の再グラフト用)
   // 全置換(AI集計): メタ(game)だけ残して打席/スナップショット/参加者/投手記録をクリアした状態から積む＝1版で丸ごと差し替え。
   // [C-5] doc.pitching もクリア: 旧参加者IDの投手記録が新participantsへ誤解決する時限爆弾の除去(§10.3)。畳み込み後に F-4 が同一人物へ再グラフト。
   // [§0/§11] doc.direct_stats も同様にクリア: 残置すると旧participant_id(m1..)が再採番後の別人へ誤帰属(捏造)。F-4 が同一人物へ再グラフト。
-  if (opts.replace && doc) {
+  if (replace && doc) {
     const { attendance: _a, additional_players: _b, pitching: _c, direct_stats: _d, ...rest } = doc; // 旧形式フィールド/宙吊り記録は復活させない
     doc = { ...rest, plate_appearances: [], lineup_snapshots: [], participants: [] };
   }
   const summaries: string[] = [];
-  for (const op of resolvedOps) {
+  for (const op of ops) {
     if (op.type === "setGameMeta") {
       const { type, ...patch } = op; void type;
       doc = reduceSetGameMeta(doc, gameId, patch);
@@ -1754,6 +1760,27 @@ export async function applyOps(gameId: string, ops: GameOpInput[], opts: CommitO
   // ルールベース事後検査で矛盾を不明瞭タグに(冪等・値は変えない)＝要確認として浮上、解決は人が行う。
   //   nameOf(=masters は上でロード済)で注記の人物IDを名前で出す(内部コード非露出)。
   doc = applyValidation(doc, docNameResolver(doc, masters));
+  return { doc, summaries };
+}
+
+/**
+ * 操作の配列を1世代で原子的に反映(AIの1返却＝これ1回)。
+ * 作業中(下書き)を1回ロード→順に畳む→1回 commit。base_gen で楽観ロック。
+ * 戻り値は各opの人間向け要約(画面の「反映しました」用)。
+ */
+export async function applyOps(gameId: string, ops: GameOpInput[], opts: CommitOpts = {}): Promise<string[]> {
+  const w = await loadWorking(gameId);
+  const masters = await loadPlayers(); // 人物参照の解決(マスタID→参加者の自動追加)に使う
+  // [§12 P1] 助っ人名→種別guestマスタ選手(player_id)へ解決(参加者化の境界)。以降 reducer は player_id 一本。
+  // [助っ人ライフサイクル・失敗経路] マスタ書込(createGuestPlayer)は版commitと非トランザクション=途中のopが
+  // throw すると版は残らないのに助っ人だけ残り、AI辞書を汚染して次回の集計でID取り違えの温床になる(2026-08-22 実障害:
+  // 失敗集計7回分の孤児)。このコールで作った助っ人を記録し、失敗時は「どこからも参照されていなければ」掃除する
+  // (deleteUnreferencedGuests=全試合+全下書きを走査。手動追加や他試合参照の助っ人は候補外なので消えない)。
+  const createdGuests = new Set<string>();
+  const resolvedOps = await resolveGuestNamesInOps(ops, masters, createdGuests);
+  try {
+  // 畳み込み本体は純関数 foldOpsInMemory(評価ハーネスと共有)。ここは DB 境界(load/助っ人作成/commit/失敗時掃除)だけ。
+  const { doc, summaries } = foldOpsInMemory(gameId, w?.doc ?? null, resolvedOps, masters, opts.replace ?? false);
   // §10.3 実バグ④: 呼び出し側のgen(描画時)を優先=真の楽観ロック。未指定時のみロード時genへフォールバック
   // (??必須: gen=0=履歴前シードがある)。旧実装は常にロード時genで上書きし、呼び出し側指定を握り潰していた。
   await commitGameDoc(doc, co({ ...opts, base_gen: opts.base_gen ?? w?.gen }));
