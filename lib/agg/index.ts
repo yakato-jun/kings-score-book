@@ -78,6 +78,8 @@ export function posMap(snap: LineupSnapshot | null): Map<string, string> {
 }
 
 const BATTER_OUT = new Set<ResultCode>(["OUT", "SF", "SH"]);
+// 走者のアウトになりうる守備アウトの場所(1塁は打者アウトが大半なので含めない)
+const RUNNER_OUT_BASES = new Set(["2", "3", "home"]);
 
 /** このPAで増えたアウト数（三振+守備アウト+走塁死）。
  * 旧データはフライ/犠飛で fielding.outs を空にし sequence だけ記録するため、
@@ -92,9 +94,13 @@ export function outsMade(pa: PlateAppearance): number {
   }
   // baserunning_after のアウト(打球での進塁中アウト等)も数える。ただしFCの封殺など fielding.outs と
   // 同じ走者を二重に数えない(走者除去はafterで行うため両方に出る)。idが無く守備outがある場合は重複とみなしスキップ。
+  // after の runner_id はサーバが from塁から補うが、fielding.outs の runner_id は補われない(AIは出さない)。
+  // そのため「ID無しの2/3/本塁の守備アウト」1件を after の走者アウト1件と同一とみなす(本塁タッチアウト・FCの封殺・飛び出し)。
+  let unattributed = fo.filter((f) => !f.runner_id && RUNNER_OUT_BASES.has(String(f.at))).length;
   for (const m of pa.baserunning_after ?? []) {
     if (m.to !== "out") continue;
     if (m.runner_id ? counted.has(m.runner_id) : fo.length > 0) continue;
+    if (unattributed > 0) { unattributed -= 1; if (m.runner_id) counted.add(m.runner_id); continue; }
     o += 1; if (m.runner_id) counted.add(m.runner_id);
   }
   // 守備outが未記録のとき打者アウトを補完（三振=捕手刺殺 / フライ等=打者アウト / AUTO_OUT=自動アウト枠）。

@@ -113,3 +113,39 @@ describe("outsMade: 併殺/三重殺/AUTO_OUT(§10.3)", () => {
     expect(outsMade(pa({ result: "AUTO_OUT" }))).toBe(1);
   });
 });
+
+describe("outsMade: 走者アウトの二重記録(ID無しの守備アウト + after の走者アウト)", () => {
+  // after の runner_id はサーバが補うが fielding.outs には ID が無い=同じアウトが両方に出る(実データ 2026-08-23)
+  it("二塁打+一塁走者の本塁タッチアウト(8-6-2)は1アウト", () => {
+    const p = pa({
+      result: "H2",
+      fielding: { hit_to: "8", sequence: ["8", "6", "2"], outs: [{ at: "home", type: "tag", runner_id: null }], errors: [] },
+      baserunning_after: [{ from: "1", to: "out", runner_id: "R1" }],
+    });
+    expect(outsMade(p)).toBe(1);
+  });
+  it("野選で一塁走者が二塁封殺(打者は出塁)は1アウト", () => {
+    const p = pa({
+      result: "FC",
+      fielding: { hit_to: "3", sequence: ["3", "4"], outs: [{ at: "2", type: "force", runner_id: null }], errors: [] },
+      baserunning_after: [{ from: "1", to: "out", runner_id: "R1" }],
+    });
+    expect(outsMade(p)).toBe(1);
+  });
+  it("フライ+飛び出した二塁走者の帰塁アウトは2アウト(打者の捕球アウトは別に数える)", () => {
+    const p = pa({
+      result: "OUT",
+      fielding: { hit_to: "9", sequence: ["9", "4"], outs: [{ at: "9", type: "catch", runner_id: null }, { at: "2", type: "force", runner_id: null }], errors: [] },
+      baserunning_after: [{ from: "2", to: "out", runner_id: "R2" }],
+    });
+    expect(outsMade(p)).toBe(2);
+  });
+  it("一塁の守備アウト(打者)と after の走者アウトは別のアウトとして数える", () => {
+    const p = pa({
+      result: "OUT",
+      fielding: { hit_to: "6", sequence: ["6", "3"], outs: [{ at: "1", type: "force", runner_id: null }], errors: [] },
+      baserunning_after: [{ from: "2", to: "out", runner_id: "R2" }],
+    });
+    expect(outsMade(p)).toBe(2);
+  });
+});
