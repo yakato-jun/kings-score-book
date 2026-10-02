@@ -371,3 +371,5 @@ button.db-act:disabled, .draftbar .db-act[aria-disabled="true"] { border-color: 
   .sc-num { font-size: 0.8rem; }
   .sc-num input, .sc-num select { font-size: 0.9rem; }
 }
+.notebar .vmode { padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 5px; font-size: 0.85rem; background: #fff; }
+.voiceband.livepartial { background: #f9fafb; border-color: #e5e7eb; color: #4b5563; }

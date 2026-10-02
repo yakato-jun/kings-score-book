@@ -4,11 +4,17 @@ import { useRouter } from "next/navigation";
 import { useUnsavedGuard } from "@/components/useUnsavedGuard";
 import { useDialog } from "@/components/DialogProvider";
 import { createSegmenter } from "@/lib/voice-segmenter";
+import { createLiveTranscriber } from "@/lib/live-stt/client";
+import type { LiveSessionInfo, LiveTranscriber } from "@/lib/live-stt/types";
 
 type Flag = { inning: number; half: "top" | "bottom"; order: number; detail: string };
 type Status = { status?: string; flags?: Flag[]; clarification?: string | null; calls?: number; hasDraft?: boolean; error?: string };
 type VoiceCorrection = { heard: string; corrected: string };
 const POLL_MS = 2000;
+// Live モードのマイク音声タップ(AudioWorklet)。~2048フレームずつ Float32 をメインスレッドへ渡すだけ(変換は lib/live-stt/pcm)。
+// 出力は書かない=無音。destination へ繋ぐのは処理を駆動させるためで、スピーカーへは何も出ない。
+const PCM_TAP_WORKLET = `class P extends AudioWorkletProcessor{constructor(){super();this.b=[];this.n=0}process(i){const c=i[0]&&i[0][0];if(c){this.b.push(c.slice());this.n+=c.length;if(this.n>=2048){const o=new Float32Array(this.n);let k=0;for(const x of this.b){o.set(x,k);k+=x.length}this.port.postMessage(o,[o.buffer]);this.b=[];this.n=0}}return true}}registerProcessor("pcm-tap",P)`;
+type VoiceMode = "batch" | "live";
 const CAP_MS = 200_000;
 
 export default function NoteClient({ gameId, initialNote, seedError, published }: { gameId: string; initialNote: string; seedError?: string | null; published?: boolean }) {
@@ -66,6 +72,22 @@ export default function NoteClient({ gameId, initialNote, seedError, published }
   const uploadChainRef = useRef<Promise<void>>(Promise.resolve()); // FIFO: promise 連結で逐次1件ずつ=発話順の追記を構造で保証
   const pendingRef = useRef(0); // 残件数の正本(state はその写し。コールバックの stale クロージャを避ける)
   const meterRef = useRef<HTMLSpanElement | null>(null); // 音量メーターのDOM。毎フレームの再レンダーでなく直接更新する
+  // --- Live モード(ストリーミングSTT): 話している途中の文字を別帯に表示し、発話の確定ごとに生テキストをノートへ挿入する。
+  // 補正AIは通さない(生テキスト運用)。区切りは逐次バッチと同じ segmenter の cut で commit を送る(サーバ側VADは非対応)。
+  // マイク・音量解析・区切り判定・挿入点の扱いは逐次バッチと共用し、違いは「録音→アップロード」が「ストリーム送信→commit」になる点のみ。
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>("batch");
+  const [livePartial, setLivePartial] = useState(""); // 確定前の途中テキスト(表示専用・ノートには入れない)
+  const liveRef = useRef<LiveTranscriber | null>(null); // Live セッション中のみ非null(=セッションの方式判定にも使う)
+  const workletRef = useRef<AudioWorkletNode | null>(null);
+  const workletReadyRef = useRef(false); // AudioContext はセッション間で共用なので addModule は1回
+  // 方式の選択は端末ごとに記憶(読めない環境では既定の逐次バッチ)
+  useEffect(() => {
+    try { if (localStorage.getItem("voiceMode") === "live") setVoiceMode("live"); } catch { /* 記憶なしで動く */ }
+  }, []);
+  function chooseVoiceMode(m: VoiceMode) {
+    setVoiceMode(m);
+    try { localStorage.setItem("voiceMode", m); } catch { /* 記憶できなくても切替は効く */ }
+  }
 
   // 録音状態の可聴フィードバック(レコーダー流のビープ)。音は補助なので失敗は握りつぶす。
   async function beep(freq: number, ms: number) {
@@ -92,6 +114,11 @@ export default function NoteClient({ gameId, initialNote, seedError, published }
   // 音量解析グラフの切断(セッション終了時)。AudioContext 自体はビープと共用なので閉じない(閉じるのはアンマウント時)。
   function teardownAudioGraph() {
     try { sourceRef.current?.disconnect(); } catch { /* 切断済みなら無害 */ }
+    if (workletRef.current) {
+      workletRef.current.port.onmessage = null;
+      try { workletRef.current.disconnect(); } catch { /* 切断済みなら無害 */ }
+      workletRef.current = null;
+    }
     sourceRef.current = null;
     analyserRef.current = null;
     meterBufRef.current = null;
@@ -113,6 +140,8 @@ export default function NoteClient({ gameId, initialNote, seedError, published }
       seg.rec.onstop = null; seg.rec.ondataavailable = null; // 現セグメントの確定処理(アップロード)を走らせない
       try { seg.rec.stop(); } catch { /* 解放は下の stopTracks が担う */ }
     }
+    liveRef.current?.abort(); // Live の接続も即切断(アンマウント後にノートへ挿入しない)
+    liveRef.current = null;
     teardownAudioGraph();
     stopTracks();
     void audioCtxRef.current?.close().catch(() => { /* 破棄失敗は無害 */ });
@@ -173,6 +202,7 @@ export default function NoteClient({ gameId, initialNote, seedError, published }
     const dt = now - lastTickRef.current;
     lastTickRef.current = now;
     if (segmenterRef.current.push(rms, dt) === "cut") {
+      if (liveRef.current) { liveRef.current.commit(); return; } // Live: ここまでの発話を1件として確定させる
       finalizeSegment(true); // cut=有声が minVoiceMs 以上あった時のみ返る契約なので常にアップロード対象
       if (!startSegment()) {
         // まず起きないが、続きが録れないまま黙って回すのが最悪(話した内容が消える)のでセッションを閉じて伝える
@@ -252,6 +282,7 @@ export default function NoteClient({ gameId, initialNote, seedError, published }
     stream.getTracks().forEach((t) => {
       t.onended = () => {
         if (!sessionRef.current) return;
+        if (liveRef.current) { void stopLive(segmenterRef.current.hadVoice()); setVoiceMsg("マイクが切断されたため録音を停止しました"); return; }
         finalizeSegment(segmenterRef.current.hadVoice()); // 直前までの発話を可能な範囲で救う(録音機が死んでいれば内部で無害に諦める)
         closeSession();
         setVoiceMsg("マイクが切断されたため録音を停止しました");
@@ -273,10 +304,18 @@ export default function NoteClient({ gameId, initialNote, seedError, published }
       sourceRef.current = src;
       analyserRef.current = an;
     } catch { teardownAudioGraph(); stopTracks(); setVoiceMsg("この端末では録音を利用できません"); voiceStartingRef.current = false; return; }
+    // Live: ビープより前に接続を済ませる(接続待ちの間の発話を取りこぼさない=ビープが「話してよい」の合図)
+    if (voiceMode === "live") {
+      const err = await startLive(audioCtxRef.current!, sourceRef.current!);
+      if (err || !aliveRef.current) {
+        liveRef.current?.abort(); liveRef.current = null;
+        teardownAudioGraph(); stopTracks(); if (err) setVoiceMsg(err); voiceStartingRef.current = false; return;
+      }
+    }
     await beep(880, 120); // 開始ビープは鳴り終えてから録音開始=ビープ自体をマイクに混入させない(セグメント切替では鳴らさない)
-    if (!aliveRef.current) { teardownAudioGraph(); stopTracks(); voiceStartingRef.current = false; return; } // ビープ中の遷移にも防御
+    if (!aliveRef.current) { liveRef.current?.abort(); liveRef.current = null; teardownAudioGraph(); stopTracks(); voiceStartingRef.current = false; return; } // ビープ中の遷移にも防御
     segmenterRef.current.reset(); // 前セッションの状態を持ち越さない
-    if (!startSegment()) { teardownAudioGraph(); stopTracks(); setVoiceMsg("この端末では録音を利用できません"); voiceStartingRef.current = false; return; }
+    if (!liveRef.current && !startSegment()) { teardownAudioGraph(); stopTracks(); setVoiceMsg("この端末では録音を利用できません"); voiceStartingRef.current = false; return; }
     // 挿入ストリームの起点=このセッション開始時のカーソル位置(カーソル未使用なら末尾追記)
     voicePosRef.current = cursorTouchedRef.current && noteAreaRef.current ? noteAreaRef.current.selectionStart : null;
     sessionRef.current = true;
@@ -288,11 +327,71 @@ export default function NoteClient({ gameId, initialNote, seedError, published }
     voiceStartingRef.current = false;
   }
 
+  // Live セッションの開始: 接続情報の発行→接続→マイク音声のタップ。失敗時はエラー文言を返す(後始末は呼び出し側)。
+  // 音声の送信は sessionRef が立ってから(=開始ビープ後)。それまでのタップは捨てる。
+  async function startLive(ctx: AudioContext, src: MediaStreamAudioSourceNode): Promise<string | null> {
+    let info: LiveSessionInfo & { keywordsCount?: number; error?: string };
+    try {
+      const res = await fetch("/api/voice/live-session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ gameId }) });
+      try { info = await res.json(); } catch { return `Live の開始に失敗しました（HTTP ${res.status}）`; }
+    } catch { return "Live の開始に失敗しました（通信エラー）"; }
+    if (info.error) return String(info.error);
+    const t = createLiveTranscriber(info, {
+      onPartial: (text) => { if (aliveRef.current) setLivePartial(text); },
+      onFinal: (text) => {
+        if (!aliveRef.current) return;
+        insertVoiceText(text); // 生テキストをそのまま挿入(既存の debounce 自動保存に乗る)
+        // 記録(keywords改善・補正要否の分析用)。失敗しても入力は続ける
+        void fetch("/api/voice/live-transcript", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ gameId, raw: text, model: info.model, keywordsCount: info.keywordsCount ?? 0 }) }).catch(() => { /* 記録失敗は無視 */ });
+      },
+      onError: (message) => {
+        if (!aliveRef.current) return;
+        setVoiceMsg(message);
+        setLivePartial("");
+        liveRef.current = null;
+        if (sessionRef.current) closeSession(); // 黙って「録音中」を続けない(話した内容が消え続けるのが最悪)
+      },
+    });
+    try { await t.connect(); } catch (e) { return (e as Error).message; }
+    liveRef.current = t;
+    try {
+      if (!workletReadyRef.current) {
+        const url = URL.createObjectURL(new Blob([PCM_TAP_WORKLET], { type: "application/javascript" }));
+        try { await ctx.audioWorklet.addModule(url); } finally { URL.revokeObjectURL(url); }
+        workletReadyRef.current = true;
+      }
+      const node = new AudioWorkletNode(ctx, "pcm-tap");
+      node.port.onmessage = (e: MessageEvent<Float32Array>) => { if (sessionRef.current) liveRef.current?.pushAudio(e.data, ctx.sampleRate); };
+      src.connect(node);
+      node.connect(ctx.destination); // 出力は無音。処理を駆動させるためだけに繋ぐ
+      workletRef.current = node;
+    } catch { return "この端末では Live 音声入力を利用できません"; }
+    setLivePartial("");
+    return null;
+  }
+
+  // Live セッションの終了: 最後の発話を commit → マイク解放 → 未確定分の確定を待って切断(待ちの間は processing 表示)。
+  async function stopLive(commitLast: boolean) {
+    const t = liveRef.current;
+    liveRef.current = null;
+    if (t && commitLast) t.commit();
+    bumpPending(+1);
+    closeSession();
+    try { await t?.close(); } finally {
+      bumpPending(-1);
+      if (aliveRef.current) {
+        setLivePartial("");
+        if (pendingRef.current === 0 && !sessionRef.current) setVoiceState("idle");
+      }
+    }
+  }
+
   function stopVoice() {
     if (!sessionRef.current) return; // 二重停止の防御(キー操作とタップの競合)
     // 最終セグメントの確定: 有声が実在した時だけアップロード(無声のみはSTTに投げない=コストと誤認識の抑制)。
     const upload = segmenterRef.current.hadVoice();
     segmenterRef.current.reset();
+    if (liveRef.current) { void stopLive(upload); void beep(440, 120); return; }
     finalizeSegment(upload);
     closeSession();
     void beep(440, 120); // 停止ビープ(録音停止後に鳴らす=混入しない)。開始/停止の各1回のみ
@@ -500,6 +599,11 @@ export default function NoteClient({ gameId, initialNote, seedError, published }
         >
           {voiceState === "recording" ? `⏹ 録音中 ${mmss}（タップで停止）` : voiceState === "processing" ? `文字起こし中…${pendingCount > 0 ? `（残り${pendingCount}）` : ""}` : "🎤 音声入力"}
         </button>
+        {/* 方式の切替(録音していない時のみ): 逐次=無音ごとに文字起こし+補正 / Live=話しながら途中経過を表示・補正なし */}
+        <select className="vmode" value={voiceMode} onChange={(e) => chooseVoiceMode(e.target.value as VoiceMode)} disabled={voiceState !== "idle"} aria-label="音声入力の方式">
+          <option value="batch">逐次</option>
+          <option value="live">Live</option>
+        </select>
         {/* 音量メーター(録音中のみ): ローカル解析(AnalyserNode)のみ=APIコストゼロ。
             バーの点灯は meterTick が DOM を直接更新する(ref)。React 再レンダーで駆動しない(再レンダー嵐の回避)。 */}
         {voiceState === "recording" && (
@@ -513,6 +617,8 @@ export default function NoteClient({ gameId, initialNote, seedError, published }
           {busy ? "／集計しています（このまま開いておいてください）" : calls ? `／前回 ${calls} コール` : ""}
         </span>
       </div>
+      {/* Live の途中経過(確定前・表示専用)。ノートには確定した文だけが入る */}
+      {livePartial && <div className="voiceband livepartial" aria-live="polite"><span>{livePartial}</span></div>}
       {/* 音声入力の結果帯: 補正一覧(heard→corrected)かエラー/聞き取り失敗。×か次の録音開始で消える。 */}
       {(voiceMsg || voiceCorr.length > 0) && (
         <div className="voiceband">

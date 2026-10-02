@@ -13,6 +13,8 @@ import { parseToolArguments } from "./openai";
 // 補正モデル: 実測(2026-08-08)でLunaは「山下→山田」「なかむら→中村」級の近似復元を取り逃した。
 // ルミナス知見「抽出級の判断はTerra・下位の劣化は沈黙の質に出る」に一致→Terraを既定に。envで差し替え可(集計用 AI_MODEL とは独立)。
 const DEFAULT_MODEL = "gpt-5.6-terra";
+/** 補正に使うモデル名(env優先)。生テキスト保存で「どのモデルで補正したか」を記録するためにも使う。 */
+export const correctModel = (): string => process.env.VOICE_CORRECT_MODEL ?? DEFAULT_MODEL;
 
 /** 野球の口述で頻出する用語。STTのkeywordsヒント(route)と補正の用語辞書で共用する。 */
 export const BASEBALL_TERMS: string[] = [
@@ -125,7 +127,7 @@ export async function correctTranscript(
       "辞書に無い名前や、復元に確信が持てない断片(別言語の文字列等)は挙げないでください。\n" +
       `選手辞書: ${dict.join("、")}\n` +
       `用語の例: ${BASEBALL_TERMS.join("、")}`;
-    const out = await transport({ model: process.env.VOICE_CORRECT_MODEL ?? DEFAULT_MODEL, systemText, userText: raw });
+    const out = await transport({ model: correctModel(), systemText, userText: raw });
     const o = out as { corrections?: unknown } | null | undefined;
     // 出力復元不能 → raw にフォールバック(補正なしと同義)
     if (!o || !Array.isArray(o.corrections)) {
