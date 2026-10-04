@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { listPlayers, upsertPlayer } from "@/lib/ops/players";
 import { MergePlayerControl } from "./MergePlayerControl";
@@ -30,6 +30,7 @@ export default async function PlayerEdit({ params }: { params: Promise<{ id: str
     });
     revalidatePath("/admin/players");
     revalidatePath(`/admin/players/${player.id}`);
+    redirect("/admin/players"); // 保存後は一覧へ戻る(同じ画面に留まると保存できたか分からない)
   }
 
   return (
