@@ -17,6 +17,7 @@ import { docNameResolver } from "@/lib/names";
 import { loadVersion, listVersions, loadGame, currentGen, publicGen, GenConflictError } from "@/lib/db/games";
 import { renderPlayByPlay } from "@/lib/textlog";
 import { isOpenAiModel, openaiSubmitOnce } from "./openai";
+import { normPos, normPosSeq } from "@/lib/fielding-pos";
 import type { Half, Runners, Annotation, GameDoc } from "@/lib/types/v2";
 
 const client = new Anthropic();
@@ -38,13 +39,14 @@ interface AgentResult { applied: Applied[]; clarification: string | null; gameId
 interface Scene { game_id?: string; date?: string; inning?: number; half?: string; order?: number; player_id?: string }
 
 // 打席の付随イベント(addPlateAppearance のサブスキーマ)。得点(runs)はAIが出さずエンジンが導出。
+const POS_KANJI = ["投", "捕", "一", "二", "三", "遊", "左", "中", "右"];
 const fieldingSchema = {
   type: ["object", "null"], description: "打球がある時。三振/四死球はnull",
   properties: {
     hit_to: { type: ["string", "null"], enum: ["投", "捕", "一", "二", "三", "遊", "左", "中", "右", null], description: "打球が飛んだ守備位置の漢字(番号に直さない。一=ファースト 二=セカンド 三=サード)" }, hit_type: { type: ["string", "null"], description: "G=ゴロ F=飛 L=直" },
-    sequence: { type: "array", items: { type: "string" } },
+    sequence: { type: "array", description: "送球の順(例 6-4-3 なら [遊,二,一])。1要素=1守備位置の漢字", items: { type: "string", enum: POS_KANJI } },
     outs: { type: "array", items: { type: "object", properties: { at: { type: "string" }, type: { type: "string", enum: ["force", "tag", "catch"] }, runner_id: { type: ["string", "null"] } } } },
-    errors: { type: "array", items: { type: "object", properties: { pos: { type: "string" }, type: { type: "string" } } } },
+    errors: { type: "array", items: { type: "object", properties: { pos: { type: "string", enum: POS_KANJI, description: "失策した守備位置の漢字(三失→三)" }, type: { type: "string" } } } },
   },
 };
 const baseAfterSchema = {
@@ -223,17 +225,20 @@ export function submitOnceFor(model: string, args: { system: Anthropic.TextBlock
 }
 
 // 守備位置: AIは漢字で出す(一飛→一)。番号(守備位置ID)への変換はエンジンが持つ＝モデルに 一→3 の算術をさせない。
-const POS_KANJI_TO_NUM: Record<string, string> = {
-  投: "1", 捕: "2", 一: "3", 二: "4", 三: "5", 遊: "6", 左: "7", 中: "8", 右: "9",
-  一塁: "3", 二塁: "4", 三塁: "5", 遊撃: "6", 左翼: "7", 中堅: "8", 右翼: "9",
-};
-/** op.fielding.hit_to を漢字→守備位置番号へ正規化(数字はそのまま通す)。fielding 以外の op は素通り。 */
+// hit_to だけでなく errors[].pos / sequence も番号へ(漢字のまま保存すると集計で選手に結び付かず失策・刺殺・捕殺を取りこぼす)。
+// 解釈できない値(文章など)は消さずに残す(非破壊。集計側も normPos を通すので無視される)。
+const posOrRaw = (v: unknown): unknown => (v == null ? v : normPos(String(v)) ?? v);
 function normFielding(op: Op): Op {
   const f = op.fielding as Record<string, unknown> | null | undefined;
-  if (!f || typeof f !== "object" || f.hit_to == null) return op;
-  const k = String(f.hit_to).trim();
-  const num = /^[1-9]$/.test(k) ? k : POS_KANJI_TO_NUM[k] ?? POS_KANJI_TO_NUM[k.replace(/塁$/, "")] ?? k;
-  return { ...op, fielding: { ...f, hit_to: num } };
+  if (!f || typeof f !== "object") return op;
+  const out: Record<string, unknown> = { ...f, hit_to: posOrRaw(f.hit_to) };
+  if (Array.isArray(f.sequence)) {
+    out.sequence = f.sequence.flatMap((s) => { const n = normPosSeq([String(s)]); return n.length ? n : [s]; });
+  }
+  if (Array.isArray(f.errors)) {
+    out.errors = f.errors.map((e) => (e && typeof e === "object" ? { ...e, pos: posOrRaw((e as { pos?: unknown }).pos) } : e));
+  }
+  return { ...op, fielding: out };
 }
 
 /** AIが打席に付けた unclear(理由) を annotation(source:"ai") に変換。null/空なら付けない＝落とさず印だけ残す。 */

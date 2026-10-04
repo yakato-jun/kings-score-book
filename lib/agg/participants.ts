@@ -6,6 +6,7 @@
  * ★投捕はスナップショット(pos1/pos2)から解決一本（pa.pitcher_id/catcher_id フォールバックは持たない＝§9.2）。
  * 旧 aggregateGame は移行検証(0差分)の基準として温存。Phase5 で消費側を本コードへ寄せ旧を撤去する。
  */
+import { normPos, normPosSeq } from "@/lib/fielding-pos";
 import type { GameDoc, Half, PlateAppearance, ParticipantLink, ResultCode, DirectBatting, DirectPitching, DirectFielding } from "@/lib/types/v2";
 import type { BattingLine, PitchingLine, FieldingLine, AttendanceLine, GameBox, SeasonBox } from "./types";
 import { resolveEr } from "./types";
@@ -71,12 +72,12 @@ function fget(m: Accum<FieldingLine>, rk: ResolvedKey): FieldingLine {
 type OutLike = { putout_position?: string | null; assist_positions?: string[]; at?: string; type?: string; runner_id?: string | null };
 function creditOuts(outsList: OutLike[], seq: string[], pm: Map<string, string>, fielding: Accum<FieldingLine>, resolve: (pid: string) => ResolvedKey) {
   for (const o of outsList) {
-    const putoutPos = o.putout_position ?? (seq.length ? seq[seq.length - 1] : null);
+    const putoutPos = normPos(o.putout_position) ?? (seq.length ? seq[seq.length - 1] : null);
     if (putoutPos) {
       const pid = pm.get(putoutPos);
       if (pid) fget(fielding, resolve(pid)).po += 1;
     }
-    const assists = o.assist_positions ?? [...new Set(seq.slice(0, -1))].filter((p) => p !== putoutPos);
+    const assists = o.assist_positions ? normPosSeq(o.assist_positions) : [...new Set(seq.slice(0, -1))].filter((p) => p !== putoutPos);
     for (const ap of assists) {
       const pid = pm.get(ap);
       if (pid) fget(fielding, resolve(pid)).a += 1;
@@ -85,7 +86,8 @@ function creditOuts(outsList: OutLike[], seq: string[], pm: Map<string, string>,
 }
 function creditErrors(errs: { pos: string }[] | undefined, pm: Map<string, string>, fielding: Accum<FieldingLine>, resolve: (pid: string) => ResolvedKey) {
   for (const err of errs ?? []) {
-    const pid = pm.get(err.pos);
+    const pos = normPos(err.pos);
+    const pid = pos ? pm.get(pos) : undefined;
     if (pid) fget(fielding, resolve(pid)).e += 1;
   }
 }
@@ -173,11 +175,12 @@ export function aggregateGameP(doc: GameDoc): GameBox {
         if (c) fget(fielding, resolve(c)).po += 1;
       }
       if (fl) {
-        const seq = fl.sequence ?? [];
+        const seq = normPosSeq(fl.sequence); // 漢字・連結表記を番号へ(解釈不能な要素は捨てる)
         if (fl.outs && fl.outs.length) {
           creditOuts(fl.outs, seq, pm, fielding, resolve);
         } else if (BATTER_OUT.has(pa.result)) {
-          const oneSeq = seq.length ? seq : fl.hit_to ? [fl.hit_to] : [];
+          const hitTo = normPos(fl.hit_to);
+          const oneSeq = seq.length ? seq : hitTo ? [hitTo] : [];
           if (oneSeq.length) creditOuts([{}], oneSeq, pm, fielding, resolve);
         }
         creditErrors(fl.errors, pm, fielding, resolve);
@@ -185,7 +188,7 @@ export function aggregateGameP(doc: GameDoc): GameBox {
       for (const bd of pa.baserunning_during ?? []) {
         const bf = bd.fielding;
         if (bf) {
-          const bseq = bf.sequence ?? [];
+          const bseq = normPosSeq(bf.sequence);
           if (bf.outs && bf.outs.length) creditOuts(bf.outs, bseq, pm, fielding, resolve);
           creditErrors(bf.errors, pm, fielding, resolve);
         }

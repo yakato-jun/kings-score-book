@@ -11,6 +11,7 @@
  *  - 参加 = attendance（打席数ではない）。
  *  ※勝利/敗北/セーブ は記録員判断（v2 doc に持たない）ため当エンジンは算出しない。
  */
+import { normPos, normPosSeq } from "@/lib/fielding-pos";
 import type {
   GameDoc,
   Half,
@@ -146,12 +147,12 @@ function fget(m: Accum<FieldingLine>, pid: string): FieldingLine {
 type OutLike = { putout_position?: string | null; assist_positions?: string[]; at?: string; type?: string; runner_id?: string | null };
 function creditOuts(outsList: OutLike[], seq: string[], pm: Map<string, string>, fielding: Accum<FieldingLine>) {
   for (const o of outsList) {
-    const putoutPos = o.putout_position ?? (seq.length ? seq[seq.length - 1] : null);
+    const putoutPos = normPos(o.putout_position) ?? (seq.length ? seq[seq.length - 1] : null);
     if (putoutPos) {
       const pid = pm.get(putoutPos);
       if (pid) fget(fielding, pid).po += 1;
     }
-    const assists = o.assist_positions ?? [...new Set(seq.slice(0, -1))].filter((p) => p !== putoutPos);
+    const assists = o.assist_positions ? normPosSeq(o.assist_positions) : [...new Set(seq.slice(0, -1))].filter((p) => p !== putoutPos);
     for (const ap of assists) {
       const pid = pm.get(ap);
       if (pid) fget(fielding, pid).a += 1;
@@ -160,7 +161,8 @@ function creditOuts(outsList: OutLike[], seq: string[], pm: Map<string, string>,
 }
 function creditErrors(errs: { pos: string }[] | undefined, pm: Map<string, string>, fielding: Accum<FieldingLine>) {
   for (const err of errs ?? []) {
-    const pid = pm.get(err.pos);
+    const pos = normPos(err.pos);
+    const pid = pos ? pm.get(pos) : undefined;
     if (pid) fget(fielding, pid).e += 1;
   }
 }
@@ -302,12 +304,13 @@ export function aggregateGame(doc: GameDoc): GameBox {
         if (c) fget(fielding, c).po += 1;
       }
       if (fl) {
-        const seq = fl.sequence ?? [];
+        const seq = normPosSeq(fl.sequence); // 漢字・連結表記を番号へ(解釈不能な要素は捨てる)
         if (fl.outs && fl.outs.length) {
           creditOuts(fl.outs, seq, pm, fielding);
         } else if (BATTER_OUT.has(pa.result)) {
           // 旧データ: フライ/捕球アウトが outs未記録 → sequence(無ければhit_to)から1刺殺を導出
-          const oneSeq = seq.length ? seq : fl.hit_to ? [fl.hit_to] : [];
+          const hitTo = normPos(fl.hit_to);
+          const oneSeq = seq.length ? seq : hitTo ? [hitTo] : [];
           if (oneSeq.length) creditOuts([{}], oneSeq, pm, fielding);
         }
         creditErrors(fl.errors, pm, fielding);
@@ -316,7 +319,7 @@ export function aggregateGame(doc: GameDoc): GameBox {
       for (const bd of pa.baserunning_during ?? []) {
         const bf = bd.fielding;
         if (bf) {
-          const bseq = bf.sequence ?? [];
+          const bseq = normPosSeq(bf.sequence);
           if (bf.outs && bf.outs.length) creditOuts(bf.outs, bseq, pm, fielding);
           creditErrors(bf.errors, pm, fielding);
         }
