@@ -45,6 +45,27 @@ describe("集計: 漢字の守備位置でも選手に付与する(away=自軍�
   });
 });
 
+describe("集計: 送球順も守備アウトも無いゴロアウトは標準の送球順を補う", () => {
+  const boxP = (p: ReturnType<typeof defPA>) => aggregateGameP(doc({ home_away: "away", plate_appearances: [p] }));
+  const of = (b: { fielding: { player_id: string }[] }, pid: string) => b.fielding.find((x) => x.player_id === pid || x.player_id.endsWith(`:${pid}`)) as { po: number; a: number } | undefined;
+  it("遊ゴロ(hit_to=6・G・seq/outs無し)は遊撃に捕殺・一塁に刺殺", () => {
+    const b = boxP(defPA({ result: "OUT", fielding: { hit_to: "6", hit_type: "G", sequence: [], outs: [], errors: [] } }));
+    expect(of(b, "P1")?.a).toBe(1);
+    expect(of(b, "P1")?.po ?? 0).toBe(0);
+    expect(of(b, "P6")?.po).toBe(1);
+  });
+  it("一ゴロは一塁手の刺殺のみ(捕殺なし)", () => {
+    const b = boxP(defPA({ result: "OUT", fielding: { hit_to: "3", hit_type: "G", sequence: [], outs: [], errors: [] } }));
+    expect(of(b, "P6")?.po).toBe(1);
+    expect(of(b, "P6")?.a ?? 0).toBe(0);
+  });
+  it("フライは従来どおり捕球野手の刺殺のみ(補わない)", () => {
+    const b = boxP(defPA({ result: "OUT", fielding: { hit_to: "6", hit_type: "F", sequence: [], outs: [], errors: [] } }));
+    expect(of(b, "P1")?.po).toBe(1);
+    expect(of(b, "P6")).toBeUndefined();
+  });
+});
+
 describe("取り込み(toGameOp): fielding の守備位置を番号へ正規化", () => {
   it("hit_to / errors.pos / sequence(連結は分割)を番号に。解釈不能な要素は消さずに残す", () => {
     const g = toGameOp({ op: "addPlateAppearance", result_code: "E", fielding: { hit_to: "三", sequence: ["三-一", "メモ"], outs: [], errors: [{ pos: "三", type: "捕球" }] } }) as unknown as { fielding: Record<string, unknown> };

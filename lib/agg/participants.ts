@@ -6,7 +6,7 @@
  * ★投捕はスナップショット(pos1/pos2)から解決一本（pa.pitcher_id/catcher_id フォールバックは持たない＝§9.2）。
  * 旧 aggregateGame は移行検証(0差分)の基準として温存。Phase5 で消費側を本コードへ寄せ旧を撤去する。
  */
-import { normPos, normPosSeq } from "@/lib/fielding-pos";
+import { normPos, normPosSeq, inferGroundOutSeq } from "@/lib/fielding-pos";
 import type { GameDoc, Half, PlateAppearance, ParticipantLink, ResultCode, DirectBatting, DirectPitching, DirectFielding } from "@/lib/types/v2";
 import type { BattingLine, PitchingLine, FieldingLine, AttendanceLine, GameBox, SeasonBox } from "./types";
 import { resolveEr } from "./types";
@@ -180,7 +180,8 @@ export function aggregateGameP(doc: GameDoc): GameBox {
           creditOuts(fl.outs, seq, pm, fielding, resolve);
         } else if (BATTER_OUT.has(pa.result)) {
           const hitTo = normPos(fl.hit_to);
-          const oneSeq = seq.length ? seq : hitTo ? [hitTo] : [];
+          // ゴロアウトで送球順が無い(2026-07以降のAI集計に多い)→標準の送球順(遊ゴロ=遊→一)を補い、捕殺と一塁刺殺を付ける
+          const oneSeq = seq.length ? seq : inferGroundOutSeq(pa.result, fl.hit_type, hitTo) ?? (hitTo ? [hitTo] : []);
           if (oneSeq.length) creditOuts([{}], oneSeq, pm, fielding, resolve);
         }
         creditErrors(fl.errors, pm, fielding, resolve);

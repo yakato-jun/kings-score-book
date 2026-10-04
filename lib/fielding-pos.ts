@@ -22,6 +22,17 @@ export function normPos(raw: string | null | undefined): string | null {
   return POS_WORDS[s] ?? null;
 }
 
+/**
+ * 送球順も守備アウトも記録されていない「内野ゴロの打者アウト」の標準的な送球順を補う(集計の救済)。
+ * 遊ゴロ等=打球処理野手→一塁(捕殺+一塁刺殺)。一ゴロ=一塁手が自ら踏む(刺殺のみ)。
+ * ゴロ以外・外野・野選等は推測しない(null)= 呼び出し側は従来どおり hit_to に刺殺を付ける。
+ */
+export function inferGroundOutSeq(result: string | null | undefined, hitType: string | null | undefined, hitTo: string | null): string[] | null {
+  if (hitType !== "G" || (result !== "OUT" && result !== "SH") || !hitTo) return null;
+  if (hitTo === "3") return ["3"];
+  return ["1", "2", "4", "5", "6"].includes(hitTo) ? [hitTo, "3"] : null;
+}
+
 /** 送球順(sequence)の正規化: 各要素を番号へ。連結表記("三-一" "6-4-3")は分割。解釈できない要素(文章など)は捨てる */
 export function normPosSeq(seq: readonly string[] | null | undefined): string[] {
   const out: string[] = [];

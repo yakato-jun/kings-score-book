@@ -44,7 +44,7 @@ const fieldingSchema = {
   type: ["object", "null"], description: "打球がある時。三振/四死球はnull",
   properties: {
     hit_to: { type: ["string", "null"], enum: ["投", "捕", "一", "二", "三", "遊", "左", "中", "右", null], description: "打球が飛んだ守備位置の漢字(番号に直さない。一=ファースト 二=セカンド 三=サード)" }, hit_type: { type: ["string", "null"], description: "G=ゴロ F=飛 L=直" },
-    sequence: { type: "array", description: "送球の順(例 6-4-3 なら [遊,二,一])。1要素=1守備位置の漢字", items: { type: "string", enum: POS_KANJI } },
+    sequence: { type: "array", description: "打球を処理した野手から送球の順(例 6-4-3 なら [遊,二,一])。1要素=1守備位置の漢字。ゴロでアウトにした時は必ず書く(遊ゴロ=[遊,一]、一塁手が自ら踏んだ一ゴロ=[一])。フライ/ライナーは捕球した野手1つ", items: { type: "string", enum: POS_KANJI } },
     outs: { type: "array", items: { type: "object", properties: { at: { type: "string" }, type: { type: "string", enum: ["force", "tag", "catch"] }, runner_id: { type: ["string", "null"] } } } },
     errors: { type: "array", items: { type: "object", properties: { pos: { type: "string", enum: POS_KANJI, description: "失策した守備位置の漢字(三失→三)" }, type: { type: "string" } } } },
   },

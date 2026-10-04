@@ -11,7 +11,7 @@
  *  - 参加 = attendance（打席数ではない）。
  *  ※勝利/敗北/セーブ は記録員判断（v2 doc に持たない）ため当エンジンは算出しない。
  */
-import { normPos, normPosSeq } from "@/lib/fielding-pos";
+import { normPos, normPosSeq, inferGroundOutSeq } from "@/lib/fielding-pos";
 import type {
   GameDoc,
   Half,
@@ -310,7 +310,8 @@ export function aggregateGame(doc: GameDoc): GameBox {
         } else if (BATTER_OUT.has(pa.result)) {
           // 旧データ: フライ/捕球アウトが outs未記録 → sequence(無ければhit_to)から1刺殺を導出
           const hitTo = normPos(fl.hit_to);
-          const oneSeq = seq.length ? seq : hitTo ? [hitTo] : [];
+          // ゴロアウトで送球順が無い(2026-07以降のAI集計に多い)→標準の送球順(遊ゴロ=遊→一)を補い、捕殺と一塁刺殺を付ける
+          const oneSeq = seq.length ? seq : inferGroundOutSeq(pa.result, fl.hit_type, hitTo) ?? (hitTo ? [hitTo] : []);
           if (oneSeq.length) creditOuts([{}], oneSeq, pm, fielding);
         }
         creditErrors(fl.errors, pm, fielding);
