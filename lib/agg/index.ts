@@ -98,8 +98,12 @@ export function outsMade(pa: PlateAppearance): number {
   // after の runner_id はサーバが from塁から補うが、fielding.outs の runner_id は補われない(AIは出さない)。
   // そのため「ID無しの2/3/本塁の守備アウト」1件を after の走者アウト1件と同一とみなす(本塁タッチアウト・FCの封殺・飛び出し)。
   let unattributed = fo.filter((f) => !f.runner_id && RUNNER_OUT_BASES.has(String(f.at))).length;
+  // 結果コードが既に打者アウト(凡打/犠打飛/自動アウト/振り逃げでない三振)なら、打者自身の after「→out」は同じアウトの重複記録。
+  const batterOutByResult = BATTER_OUT.has(pa.result) || pa.result === "AUTO_OUT" || (pa.result === "K" && !pa.dropped_third_strike);
+  const isBatterMove = (m: { from?: string | null; runner_id?: string | null }) => m.from == null || m.from === "batter" || m.runner_id === pa.batter_id;
   for (const m of pa.baserunning_after ?? []) {
     if (m.to !== "out") continue;
+    if (batterOutByResult && isBatterMove(m)) continue;
     if (m.runner_id ? counted.has(m.runner_id) : fo.length > 0) continue;
     if (unattributed > 0) { unattributed -= 1; if (m.runner_id) counted.add(m.runner_id); continue; }
     o += 1; if (m.runner_id) counted.add(m.runner_id);

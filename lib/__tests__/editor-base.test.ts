@@ -149,3 +149,22 @@ describe("outsMade: 走者アウトの二重記録(ID無しの守備アウト + 
     expect(outsMade(p)).toBe(2);
   });
 });
+
+describe("outsMade: 打者アウトの重複記録(結果コード + 打者自身の after →out)", () => {
+  // 実データ 2026-06-07: 内野ゴロが force@1 と 打者 null→out の両方に記録され 1プレー2アウトに数えられていた
+  it("ゴロアウト(force@1)＋打者 null→out は1アウト", () => {
+    const p = pa({ batter_id: "B", result: "OUT", fielding: { hit_to: "4", sequence: ["4", "3"], outs: [{ at: "1", type: "force" }], errors: [] },
+      baserunning_after: [{ from: null, to: "out", runner_id: "B" }] });
+    expect(outsMade(p)).toBe(1);
+  });
+  it("守備アウト未記録のフライ＋打者 →out も1アウト(結果コードの補完と重複しない)", () => {
+    const p = pa({ batter_id: "B", result: "OUT", fielding: { hit_to: "8", sequence: ["8"], outs: [], errors: [] },
+      baserunning_after: [{ from: null, to: "out", runner_id: "B" }] });
+    expect(outsMade(p)).toBe(1);
+  });
+  it("安打の打者が次塁を狙ってアウト(H1＋打者 →out)は従来どおり1アウト", () => {
+    const p = pa({ batter_id: "B", result: "H1", fielding: { hit_to: "7", sequence: ["7", "4"], outs: [{ at: "2", type: "tag", runner_id: "B" }], errors: [] },
+      baserunning_after: [{ from: null, to: "out", runner_id: "B" }] });
+    expect(outsMade(p)).toBe(1);
+  });
+});
