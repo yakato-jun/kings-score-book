@@ -11,7 +11,7 @@
  *  - 参加 = attendance（打席数ではない）。
  *  ※勝利/敗北/セーブ は記録員判断（v2 doc に持たない）ため当エンジンは算出しない。
  */
-import { normPos, normPosSeq, inferGroundOutSeq } from "@/lib/fielding-pos";
+import { normPos, normPosSeq, inferGroundOutSeq, outCredits } from "@/lib/fielding-pos";
 import type {
   GameDoc,
   Half,
@@ -142,18 +142,16 @@ function fget(m: Accum<FieldingLine>, pid: string): FieldingLine {
   return x;
 }
 
-// 守備記録の付与（pa.fielding と baserunning_during.fielding の両方で共用）。
-// 刺殺=putout_position(無ければsequence最後) / 捕殺=assist_positions(無ければ最後以外)。
+// 守備記録の付与（pa.fielding と baserunning_during.fielding で共用）。刺殺・捕殺の付け先は outCredits(lib/fielding-pos):
+// 明示(putout/assist_positions)優先・複数アウトは送球順を前から割当・送球順の無い捕球は at の野手。
 type OutLike = { putout_position?: string | null; assist_positions?: string[]; at?: string; type?: string; runner_id?: string | null };
 function creditOuts(outsList: OutLike[], seq: string[], pm: Map<string, string>, fielding: Accum<FieldingLine>) {
-  for (const o of outsList) {
-    const putoutPos = normPos(o.putout_position) ?? (seq.length ? seq[seq.length - 1] : null);
-    if (putoutPos) {
-      const pid = pm.get(putoutPos);
+  for (const c of outCredits(outsList, seq)) {
+    if (c.putout) {
+      const pid = pm.get(c.putout);
       if (pid) fget(fielding, pid).po += 1;
     }
-    const assists = o.assist_positions ? normPosSeq(o.assist_positions) : [...new Set(seq.slice(0, -1))].filter((p) => p !== putoutPos);
-    for (const ap of assists) {
+    for (const ap of c.assists) {
       const pid = pm.get(ap);
       if (pid) fget(fielding, pid).a += 1;
     }

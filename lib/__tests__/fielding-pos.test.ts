@@ -74,3 +74,23 @@ describe("取り込み(toGameOp): fielding の守備位置を番号へ正規化"
     expect(g.fielding.errors).toEqual([{ pos: "5", type: "捕球" }]);
   });
 });
+
+describe("集計: 刺殺・捕殺の付け先(outCredits)", () => {
+  const boxP = (p: ReturnType<typeof defPA>) => aggregateGameP(doc({ home_away: "away", plate_appearances: [p] }));
+  const of = (b: { fielding: { player_id: string }[] }, pid: string) => b.fielding.find((x) => x.player_id === pid || x.player_id.endsWith(`:${pid}`)) as { po: number; a: number } | undefined;
+  it("送球順の無い捕球アウト(catch@8)は中堅手の刺殺", () => {
+    const b = boxP(defPA({ result: "OUT", fielding: { hit_to: "8", hit_type: "F", sequence: [], outs: [{ at: "8", type: "catch" }], errors: [] } }));
+    expect(of(b, "P7")?.po).toBe(1);
+  });
+  it("6-4-3 併殺(明示なし)は 遊=捕殺1・二=刺殺1捕殺1・一=刺殺1", () => {
+    const b = boxP(defPA({ result: "OUT", double_play: true, fielding: { hit_to: "6", hit_type: "G", sequence: ["6", "4", "3"], outs: [{ at: "2", type: "force" }, { at: "1", type: "force" }], errors: [] } }));
+    expect(of(b, "P1")).toMatchObject({ po: 0, a: 1 });
+    expect(of(b, "P4")).toMatchObject({ po: 1, a: 1 });
+    expect(of(b, "P6")).toMatchObject({ po: 1, a: 0 });
+  });
+  it("明示の putout_position は従来どおり優先", () => {
+    const b = boxP(defPA({ result: "OUT", fielding: { hit_to: "5", hit_type: "G", sequence: ["5", "3"], outs: [{ at: "1", type: "force", putout_position: "3", assist_positions: ["5"] }], errors: [] } }));
+    expect(of(b, "P6")?.po).toBe(1);
+    expect(of(b, "P5")?.a).toBe(1);
+  });
+});

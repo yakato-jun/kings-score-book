@@ -33,6 +33,25 @@ export function inferGroundOutSeq(result: string | null | undefined, hitType: st
   return ["1", "2", "4", "5", "6"].includes(hitTo) ? [hitTo, "3"] : null;
 }
 
+type OutRecord = { putout_position?: string | null; assist_positions?: string[]; at?: string | null; type?: string };
+
+/**
+ * 守備アウトごとの刺殺・捕殺の付け先(守備位置番号)。seq は normPosSeq 済みの送球順。
+ * - putout_position / assist_positions が明示されていればそれを使う。
+ * - 複数アウトで明示が無く、送球順の長さが「アウト数+1」なら前から順に割り当てる(6-4-3 → [4刺殺/6捕殺],[3刺殺/4捕殺])。
+ * - それ以外は従来どおり 刺殺=送球順の最後・捕殺=それ以外。
+ * - 送球順が無い捕球アウト(catch)は at を捕球した野手の守備位置とみなす(捕球に塁は無い)。
+ */
+export function outCredits(outs: readonly OutRecord[], seq: readonly string[]): { putout: string | null; assists: string[] }[] {
+  const chain = outs.length >= 2 && seq.length === outs.length + 1 && outs.every((o) => !normPos(o.putout_position) && !o.assist_positions);
+  return outs.map((o, i) => {
+    if (chain) return { putout: seq[i + 1], assists: [seq[i]] };
+    const putout = normPos(o.putout_position) ?? (seq.length ? seq[seq.length - 1] : o.type === "catch" ? normPos(o.at) : null);
+    const assists = o.assist_positions ? normPosSeq(o.assist_positions) : [...new Set(seq.slice(0, -1))].filter((p) => p !== putout);
+    return { putout, assists };
+  });
+}
+
 /** 送球順(sequence)の正規化: 各要素を番号へ。連結表記("三-一" "6-4-3")は分割。解釈できない要素(文章など)は捨てる */
 export function normPosSeq(seq: readonly string[] | null | undefined): string[] {
   const out: string[] = [];
