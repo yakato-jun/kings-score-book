@@ -177,6 +177,18 @@ describe("deriveRuns: runs[](得点・打点・自責)をエンジンが導出�
     const r = deriveRuns({ first: null, second: null, third: "C" }, pa({ batter_id: "D", result: "H1", baserunning_after: [{ runner_id: "C", from: "3", to: "home" }] }));
     expect(r).toEqual([{ runner_id: "C", rbi: true, earned: true, cause: "hit", origin: "auto" }]);
   });
+  it("安打で2人生還＋悪送球でもう1人生還(reason に失策)→3人目だけ cause=error・rbi=false・earned=false", () => {
+    const r = deriveRuns({ first: "A", second: "B", third: "C" }, pa({ batter_id: "D", result: "H1", baserunning_after: [
+      { runner_id: "C", from: "3", to: "home" }, { runner_id: "B", from: "2", to: "home" },
+      { runner_id: "A", from: "1", to: "home", reason: "error" }, { runner_id: "D", from: null, to: "3" },
+    ] }));
+    expect(r.map((x) => [x.runner_id, x.cause, x.rbi, x.earned]).sort()).toEqual([["A", "error", false, false], ["B", "hit", true, true], ["C", "hit", true, true]]);
+  });
+  it("reason が日本語の失策表現(センター悪送球)でも error。失策以外の reason(ライト前ヒット)は従来どおり hit", () => {
+    const mk = (reason: string) => deriveRuns({ first: null, second: null, third: "C" }, pa({ batter_id: "D", result: "H1", baserunning_after: [{ runner_id: "C", from: "3", to: "home", reason }] }))[0];
+    expect(mk("センターからの悪送球で生還")).toMatchObject({ cause: "error", rbi: false });
+    expect(mk("ライト前ヒット")).toMatchObject({ cause: "hit", rbi: true });
+  });
   it("本塁打は塁上＋打者が全員 rbi=true・cause=hr", () => {
     const r = deriveRuns({ first: "A", second: null, third: "C" }, pa({ batter_id: "D", result: "HR" }));
     expect(r.map((x) => x.runner_id)).toEqual(["C", "A", "D"]);

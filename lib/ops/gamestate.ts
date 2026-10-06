@@ -204,6 +204,15 @@ const causeFromResult = (result: ResultCode): Cause => {
     default: return "other";
   }
 };
+/**
+ * 打撃結果の打席で生還した走者の要因。move.reason に失策が明示されていれば error(打点なし・自責近似なし)を優先する
+ * (例: 安打で2人生還＋センター悪送球でもう1人生還 → 3人目だけ error)。それ以外は打撃結果から。
+ */
+const ERROR_REASON = /エラー|失策|悪送球|後逸|落球|ファンブル/;
+const causeForHomeMove = (m: { reason?: string | null }, result: ResultCode): Cause => {
+  const r = (m.reason ?? "").trim();
+  return /^(e|error)$/i.test(r) || ERROR_REASON.test(r) ? "error" : causeFromResult(result);
+};
 const RBI_CAUSE = new Set<Cause>(["hit", "hr", "walk", "hbp", "sf", "sh", "fc", "groundout"]);
 
 /**
@@ -260,7 +269,7 @@ export function deriveRuns(before: Runners, pa: PlateAppearance): RunEvent[] {
   const { runnerMoves, batterMoves } = splitAfterMoves(pa);
   for (const m of runnerMoves) {
     // [§10.6] 明示 to:home は盤面不在でも保持(非破壊fill)。onBoardゲートは撤去。
-    if (m.to === "home") add(m.runner_id, causeFromResult(pa.result));
+    if (m.to === "home") add(m.runner_id, causeForHomeMove(m, pa.result));
     r = applyMoves(r, [m]);
   }
   if (FORCE.has(pa.result)) r = applyForce(r, pa.batter_id);
@@ -270,7 +279,7 @@ export function deriveRuns(before: Runners, pa: PlateAppearance): RunEvent[] {
   }
   for (const m of batterMoves) {
     // [§10.6] 打者自身の明示生還(ランニング本塁打等)も盤面不在で落とさない(非破壊fill)。
-    if (m.to === "home") add(m.runner_id, causeFromResult(pa.result));
+    if (m.to === "home") add(m.runner_id, causeForHomeMove(m, pa.result));
     r = applyMoves(r, [m]);
   }
   return out;
