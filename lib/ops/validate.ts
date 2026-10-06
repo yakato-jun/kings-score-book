@@ -140,11 +140,14 @@ export function validateGame(doc: GameDoc, nameOf?: (id: string) => string): Gam
 
   // R5: 打順連続性(自軍)。自軍の打席を時系列に並べ、隣接する2打席が同一打者＝打順を一巡せず連続＝打順ズレの疑い。
   //   ブロックせず要確認(特別ルールで連続打席もあり得る→ユーザーが承認できる)。承認(resolved rule:R5)はスキップ。
+  //   直前が未完了打席(走者アウトでチェンジ等)なら同じ打者の再打席が正＝連続とみなさない(エンジン deriveNextPA と同じ判定)。
   const kHalf = kingsBatHalf(doc);
   const kingsPAs = doc.plate_appearances.filter((p) => p.half === kHalf).sort((a, b) => a.inning - b.inning || a.order - b.order);
   for (let i = 1; i < kingsPAs.length; i++) {
     const cur = kingsPAs[i];
-    if (cur.batter_id && cur.batter_id === kingsPAs[i - 1].batter_id) {
+    const prev = kingsPAs[i - 1];
+    if (prev.complete === false || prev.result === "INC") continue;
+    if (cur.batter_id && cur.batter_id === prev.batter_id) {
       if ((cur.annotations ?? []).some((a) => a.type === "resolved" && a.rule === "R5")) continue;
       flags.push({ inning: cur.inning, half: cur.half, order: cur.order, rule: "R5", detail: "同じ打者が打順を一巡せず連続して打席に立っています（打順ズレの疑い）" });
     }

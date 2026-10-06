@@ -196,6 +196,15 @@ describe("R5 打順連続性: 同一打者の連続打席を検出(承認でス�
     ]));
     expect(flags.filter((f) => f.rule === "R5")).toHaveLength(0);
   });
+
+  it("直前の打席が未完了(INC=走者アウトでチェンジ)なら次の回の同じ打者は正当な再打席=検出しない", () => {
+    const flags = validateGame(game([
+      pa({ inning: 1, half: "bottom", order: 1, batter_id: "P1", result: "K" }),
+      pa({ inning: 1, half: "bottom", order: 2, batter_id: "P2", result: "INC", complete: false }),
+      pa({ inning: 2, half: "bottom", order: 1, batter_id: "P2", result: "K" }),
+    ]));
+    expect(flags.filter((f) => f.rule === "R5")).toHaveLength(0);
+  });
 });
 
 describe("rule-keyed 解決: 承認はルール単位で効く / AIは打席単位", () => {
